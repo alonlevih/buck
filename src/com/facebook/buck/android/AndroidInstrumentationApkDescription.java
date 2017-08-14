@@ -160,6 +160,7 @@ public class AndroidInstrumentationApkDescription
             /* xzCompressionLevel */ Optional.empty(),
             /* trimResourceIds */ false,
             /* keepResourcePattern */ Optional.empty(),
+            /* keepResourceClassPattern */ Optional.empty(),
             nativePlatforms,
             /* nativeLibraryMergeMap */ Optional.empty(),
             /* nativeLibraryMergeGlue */ Optional.empty(),

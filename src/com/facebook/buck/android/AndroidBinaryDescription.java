@@ -281,6 +281,7 @@ public class AndroidBinaryDescription
               Optional.empty(),
               args.isTrimResourceIds(),
               args.getKeepResourcePattern(),
+              args.getKeepResourceClassPattern(),
               nativePlatforms,
               Optional.of(args.getNativeLibraryMergeMap()),
               args.getNativeLibraryMergeGlue(),
@@ -642,6 +643,8 @@ public class AndroidBinaryDescription
     }
 
     Optional<String> getKeepResourcePattern();
+
+    Optional<String> getKeepResourceClassPattern();
 
     Optional<String> getResourceUnionPackage();
 

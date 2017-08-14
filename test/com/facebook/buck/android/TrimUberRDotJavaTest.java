@@ -53,6 +53,7 @@ public class TrimUberRDotJavaTest {
   @Test
   public void testTrimming() throws IOException, InterruptedException {
     Optional<String> keepResourcePattern = Optional.empty();
+    Optional<String> keepResourceClassPattern = Optional.empty();
     String rDotJavaContentsAfterFiltering =
         "package com.test;\n"
             + "\n"
@@ -61,12 +62,13 @@ public class TrimUberRDotJavaTest {
             + "    public static final int my_first_resource=0x7f08005c;\n"
             + "  }\n"
             + "}\n";
-    doTrimingTest(keepResourcePattern, rDotJavaContentsAfterFiltering);
+    doTrimingTest(keepResourcePattern, keepResourceClassPattern, rDotJavaContentsAfterFiltering);
   }
 
   @Test
   public void testTrimmingWithKeepPattern() throws IOException, InterruptedException {
     Optional<String> keepResourcePattern = Optional.of("^keep_resource.*");
+    Optional<String> keepResourceClassPattern = Optional.empty();
     String rDotJavaContentsAfterFiltering =
         "package com.test;\n"
             + "\n"
@@ -76,11 +78,13 @@ public class TrimUberRDotJavaTest {
             + "    public static final int keep_resource=0x7f083bc2;\n"
             + "  }\n"
             + "}\n";
-    doTrimingTest(keepResourcePattern, rDotJavaContentsAfterFiltering);
+    doTrimingTest(keepResourcePattern, keepResourceClassPattern, rDotJavaContentsAfterFiltering);
   }
 
   private void doTrimingTest(
-      Optional<String> keepResourcePattern, String rDotJavaContentsAfterFiltering)
+      Optional<String> keepResourcePattern,
+      Optional<String> keepResourceClassPattern,
+      String rDotJavaContentsAfterFiltering)
       throws InterruptedException, IOException {
     ProjectFilesystem filesystem = new ProjectFilesystem(tmpFolder.getRoot());
     BuildRuleResolver resolver =
@@ -134,7 +138,8 @@ public class TrimUberRDotJavaTest {
             TestBuildRuleParams.create(),
             Optional.of(new PathSourcePath(filesystem, rDotJavaDir)),
             ImmutableList.of(dexProducedFromJavaLibrary),
-            keepResourcePattern);
+            keepResourcePattern,
+            keepResourceClassPattern);
     resolver.addToIndex(trimUberRDotJava);
 
     BuildContext buildContext = FakeBuildContext.withSourcePathResolver(pathResolver);

@@ -61,6 +61,7 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
 
   private final Collection<DexProducedFromJavaLibrary> allPreDexRules;
   private final Optional<String> keepResourcePattern;
+  private final Optional<String> keepResourceClassPattern;
 
   private static final Pattern R_DOT_JAVA_LINE_PATTERN =
       Pattern.compile("^ *public static final int(?:\\[\\])? (\\w+)=");
@@ -68,17 +69,23 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
   private static final Pattern R_DOT_JAVA_PACKAGE_NAME_PATTERN =
       Pattern.compile("^ *package ([\\w.]+);");
 
+  private static final Pattern R_DOT_JAVA_CLASS_NAME_PATTERN =
+      Pattern.compile(".*class (\\w+)");
+
+
   TrimUberRDotJava(
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
       BuildRuleParams buildRuleParams,
       Optional<SourcePath> pathToRDotJavaDir,
       Collection<DexProducedFromJavaLibrary> allPreDexRules,
-      Optional<String> keepResourcePattern) {
+      Optional<String> keepResourcePattern,
+      Optional<String> keepResourceClassPattern) {
     super(buildTarget, projectFilesystem, buildRuleParams);
     this.pathToRDotJavaDir = pathToRDotJavaDir;
     this.allPreDexRules = allPreDexRules;
     this.keepResourcePattern = keepResourcePattern;
+    this.keepResourceClassPattern = keepResourceClassPattern;
   }
 
   @Override
@@ -174,7 +181,8 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
                         projectFilesystem.readLines(file),
                         output,
                         allReferencedResources,
-                        keepResourcePattern);
+                        keepResourcePattern,
+                        keepResourceClassPattern);
                   }
                   return FileVisitResult.CONTINUE;
                 }
@@ -199,12 +207,15 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
       List<String> rDotJavaLines,
       OutputStream output,
       ImmutableSet<String> allReferencedResources,
-      Optional<String> keepResourcePattern)
+      Optional<String> keepResourcePattern,
+      Optional<String> keepResourceClassPattern)
       throws IOException {
     String packageName = null;
+    String className = null;
     Matcher m;
 
     Optional<Pattern> keepPattern = keepResourcePattern.map(Pattern::compile);
+    Optional<Pattern> keepClassPattern = keepResourceClassPattern.map(Pattern::compile);
 
     for (String line : rDotJavaLines) {
       if (packageName == null) {
@@ -215,6 +226,12 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
           continue;
         }
       }
+
+      m = R_DOT_JAVA_CLASS_NAME_PATTERN.matcher(line);
+      if (m.find()) {
+        className = m.group(1);
+      }
+
       m = R_DOT_JAVA_LINE_PATTERN.matcher(line);
       // We match on the package name + resource name.
       // This can cause us to keep (for example) R.layout.foo when only R.string.foo
@@ -222,8 +239,9 @@ class TrimUberRDotJava extends AbstractBuildRuleWithDeclaredAndExtraDeps {
       if (m.find()) {
         final String resource = m.group(1);
         boolean shouldWriteLine =
-            allReferencedResources.contains(packageName + "." + resource)
-                || (keepPattern.isPresent() && keepPattern.get().matcher(resource).find());
+                     allReferencedResources.contains(packageName + "." + resource)
+                ||   (keepPattern.isPresent() && keepPattern.get().matcher(resource).find())
+                ||   (keepClassPattern.isPresent() && keepClassPattern.get().matcher(className).find());
         if (!shouldWriteLine) {
           continue;
         }
