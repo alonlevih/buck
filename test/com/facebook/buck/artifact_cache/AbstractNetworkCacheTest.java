@@ -17,8 +17,8 @@
 package com.facebook.buck.artifact_cache;
 
 import com.facebook.buck.event.BuckEventBus;
-import com.facebook.buck.io.BorrowablePath;
-import com.facebook.buck.io.LazyPath;
+import com.facebook.buck.io.file.BorrowablePath;
+import com.facebook.buck.io.file.LazyPath;
 import com.facebook.buck.rules.RuleKey;
 import com.facebook.buck.slb.HttpService;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
@@ -80,24 +80,25 @@ public class AbstractNetworkCacheTest {
                 .setProjectFilesystem(filesystem)
                 .setBuckEventBus(EasyMock.createMock(BuckEventBus.class))
                 .setHttpWriteExecutorService(service)
+                .setHttpFetchExecutorService(service)
                 .setErrorTextTemplate("super error message")
                 .setMaxStoreSizeBytes(maxArtifactSizeBytes)
-                .setDistributedBuildModeEnabled(false)
                 .build()) {
           @Override
-          protected CacheResult fetchImpl(
-              RuleKey ruleKey,
-              LazyPath output,
-              HttpArtifactCacheEvent.Finished.Builder eventBuilder)
-              throws IOException {
+          protected FetchResult fetchImpl(RuleKey ruleKey, LazyPath output) throws IOException {
             return null;
           }
 
           @Override
-          protected void storeImpl(
-              ArtifactInfo info, Path file, HttpArtifactCacheEvent.Finished.Builder eventBuilder)
-              throws IOException {
+          protected StoreResult storeImpl(ArtifactInfo info, Path file) throws IOException {
             storeCallCount.incrementAndGet();
+            return StoreResult.builder().build();
+          }
+
+          @Override
+          protected MultiFetchResult multiFetchImpl(
+              Iterable<AbstractAsynchronousCache.FetchRequest> requests) throws IOException {
+            return null;
           }
         };
 

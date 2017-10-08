@@ -19,8 +19,8 @@ package com.facebook.buck.cli;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.jvm.java.DefaultJavaLibrary;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.CompilerParameters;
 import com.facebook.buck.jvm.java.DefaultJavaPackageFinder;
 import com.facebook.buck.jvm.java.GenerateCodeCoverageReportStep;
 import com.facebook.buck.jvm.java.JacocoConstants;
@@ -128,7 +128,7 @@ public class TestRunning {
       final StepRunner stepRunner,
       BuildContext buildContext,
       SourcePathRuleFinder ruleFinder)
-      throws IOException, ExecutionException, InterruptedException {
+      throws IOException, InterruptedException {
 
     ImmutableSet<JavaLibrary> rulesUnderTestForCoverage;
     // If needed, we first run instrumentation on the class files.
@@ -417,7 +417,7 @@ public class TestRunning {
                 buildContext.getSourcePathResolver(),
                 ruleFinder,
                 JacocoConstants.getJacocoOutputDir(params.getCell().getFilesystem()),
-                options.getCoverageReportFormat(),
+                options.getCoverageReportFormats(),
                 options.getCoverageReportTitle(),
                 javaBuckConfig.getDefaultJavacOptions().getSpoolMode()
                     == JavacOptions.SpoolMode.INTERMEDIATE_TO_DISK,
@@ -675,7 +675,7 @@ public class TestRunning {
       SourcePathResolver sourcePathResolver,
       SourcePathRuleFinder ruleFinder,
       Path outputDirectory,
-      CoverageReportFormat format,
+      Set<CoverageReportFormat> formats,
       String title,
       boolean useIntermediateClassesDir,
       Optional<String> coverageIncludes,
@@ -693,7 +693,7 @@ public class TestRunning {
       Path classesItem = null;
 
       if (useIntermediateClassesDir) {
-        classesItem = DefaultJavaLibrary.getClassesDir(rule.getBuildTarget(), filesystem);
+        classesItem = CompilerParameters.getClassesDir(rule.getBuildTarget(), filesystem);
       } else {
         SourcePath path = rule.getSourcePathToOutput();
         if (path != null) {
@@ -712,7 +712,7 @@ public class TestRunning {
         srcDirectories.build(),
         pathsToJars.build(),
         outputDirectory,
-        format,
+        formats,
         title,
         coverageIncludes,
         coverageExcludes);

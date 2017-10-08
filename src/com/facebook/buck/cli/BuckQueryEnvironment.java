@@ -23,15 +23,15 @@ import com.facebook.buck.graph.AcyclicDepthFirstPostOrderTraversal;
 import com.facebook.buck.graph.DirectedAcyclicGraph;
 import com.facebook.buck.graph.GraphTraversable;
 import com.facebook.buck.graph.MutableDirectedGraph;
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.json.BuildFileParseException;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildFileTree;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
 import com.facebook.buck.model.FilesystemBackedBuildFileTree;
 import com.facebook.buck.parser.ParserMessages;
 import com.facebook.buck.parser.PerBuildState;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.query.NoopQueryEvaluator;
 import com.facebook.buck.query.QueryBuildTarget;
 import com.facebook.buck.query.QueryEnvironment;
@@ -42,6 +42,8 @@ import com.facebook.buck.query.QueryTarget;
 import com.facebook.buck.query.QueryTargetAccessor;
 import com.facebook.buck.rules.Cell;
 import com.facebook.buck.rules.Description;
+import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.rules.TargetNodes;
 import com.facebook.buck.util.MoreCollectors;
@@ -136,8 +138,7 @@ public class BuckQueryEnvironment implements QueryEnvironment {
       boolean enableProfiling) {
     return from(
         params.getCell(),
-        OwnersReport.builder(
-            params.getCell(), params.getParser(), params.getBuckEventBus(), params.getConsole()),
+        OwnersReport.builder(params.getCell(), params.getParser(), params.getBuckEventBus()),
         parserState,
         executor,
         new TargetPatternEvaluator(
@@ -261,6 +262,7 @@ public class BuckQueryEnvironment implements QueryEnvironment {
     TargetNode<?, ?> node = getNode(target);
     return node.getInputs()
         .stream()
+        .map(path -> PathSourcePath.of(node.getFilesystem(), path))
         .map(QueryFileTarget::of)
         .collect(MoreCollectors.toImmutableSet());
   }
@@ -371,7 +373,7 @@ public class BuckQueryEnvironment implements QueryEnvironment {
 
   private Optional<ListenableFuture<Void>> discoverNewTargetsConcurrently(
       BuildTarget buildTarget, ConcurrentHashMap<BuildTarget, ListenableFuture<Void>> jobsCache)
-      throws InterruptedException, QueryException, BuildFileParseException, BuildTargetException {
+      throws BuildFileParseException, BuildTargetException {
     ListenableFuture<Void> job = jobsCache.get(buildTarget);
     if (job != null) {
       return Optional.empty();
@@ -447,7 +449,8 @@ public class BuckQueryEnvironment implements QueryEnvironment {
           MorePaths.relativize(
               rootPath, cell.getFilesystem().resolve(path.get()).resolve(cell.getBuildFileName()));
       Preconditions.checkState(cellFilesystem.exists(buildFilePath));
-      builder.add(QueryFileTarget.of(buildFilePath));
+      SourcePath sourcePath = PathSourcePath.of(cell.getFilesystem(), buildFilePath);
+      builder.add(QueryFileTarget.of(sourcePath));
     }
     return builder.build();
   }
@@ -455,12 +458,8 @@ public class BuckQueryEnvironment implements QueryEnvironment {
   @Override
   public ImmutableSet<QueryTarget> getFileOwners(ImmutableList<String> files)
       throws QueryException {
-    try {
-      OwnersReport report = ownersReportBuilder.build(buildFileTrees, executor, files);
-      return getTargetsFromTargetNodes(report.owners.keySet());
-    } catch (BuildFileParseException | IOException e) {
-      throw new QueryException(e, "Could not parse build targets.\n%s", e.getMessage());
-    }
+    OwnersReport report = ownersReportBuilder.build(buildFileTrees, executor, files);
+    return getTargetsFromTargetNodes(report.owners.keySet());
   }
 
   @Override

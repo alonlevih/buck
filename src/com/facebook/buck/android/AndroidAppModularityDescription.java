@@ -16,9 +16,9 @@
 
 package com.facebook.buck.android;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.android.apkmodule.APKModuleGraph;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -51,8 +51,7 @@ public class AndroidAppModularityDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AndroidAppModularityDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AndroidAppModularityDescriptionArg args) {
     APKModuleGraph apkModuleGraph =
         new APKModuleGraph(
             Optional.of(args.getApplicationModuleConfigs()), targetGraph, buildTarget);

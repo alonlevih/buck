@@ -16,8 +16,9 @@
 
 package com.facebook.buck.cxx;
 
+import com.facebook.buck.cxx.toolchain.HeaderSymlinkTree;
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
@@ -35,7 +36,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 
-public class DirectHeaderMap extends HeaderSymlinkTree {
+class DirectHeaderMap extends HeaderSymlinkTree {
 
   private static final Logger LOG = Logger.get(DirectHeaderMap.class);
 
@@ -53,7 +54,7 @@ public class DirectHeaderMap extends HeaderSymlinkTree {
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), headerMapPath);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), headerMapPath);
   }
 
   @Override

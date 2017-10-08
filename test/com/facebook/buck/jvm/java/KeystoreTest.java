@@ -26,6 +26,7 @@ import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.step.Step;
 import com.google.common.collect.ImmutableList;
@@ -36,10 +37,11 @@ public class KeystoreTest {
 
   private static Keystore createKeystoreRuleForTest() throws NoSuchBuildTargetException {
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     return KeystoreBuilder.createBuilder(BuildTargetFactory.newInstance("//keystores:debug"))
-        .setStore(new FakeSourcePath("keystores/debug.keystore"))
-        .setProperties(new FakeSourcePath("keystores/debug.keystore.properties"))
+        .setStore(FakeSourcePath.of("keystores/debug.keystore"))
+        .setProperties(FakeSourcePath.of("keystores/debug.keystore.properties"))
         .build(ruleResolver);
   }
 
@@ -48,9 +50,9 @@ public class KeystoreTest {
     Keystore keystore = createKeystoreRuleForTest();
     assertEquals("keystore", keystore.getType());
 
-    assertEquals(new FakeSourcePath("keystores/debug.keystore"), keystore.getPathToStore());
+    assertEquals(FakeSourcePath.of("keystores/debug.keystore"), keystore.getPathToStore());
     assertEquals(
-        new FakeSourcePath("keystores/debug.keystore.properties"),
+        FakeSourcePath.of("keystores/debug.keystore.properties"),
         keystore.getPathToPropertiesFile());
   }
 

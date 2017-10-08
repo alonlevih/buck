@@ -17,7 +17,7 @@
 package com.facebook.buck.cxx;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.json.JsonConcatenateStep;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
@@ -40,7 +40,7 @@ import java.util.SortedSet;
  * Merge all the json reports together into one and emit a list of results dirs of each capture and
  * analysis target involved for the analysis itself.
  */
-public class CxxInferComputeReport extends AbstractBuildRule implements HasPostBuildSteps {
+class CxxInferComputeReport extends AbstractBuildRule implements HasPostBuildSteps {
 
   private CxxInferAnalyze analysisToReport;
   private ProjectFilesystem projectFilesystem;
@@ -105,7 +105,7 @@ public class CxxInferComputeReport extends AbstractBuildRule implements HasPostB
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), reportOutput);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), reportOutput);
   }
 
   @Override

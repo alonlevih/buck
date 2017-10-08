@@ -17,7 +17,7 @@
 package com.facebook.buck.jvm.java;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRuleWithDeclaredAndExtraDeps;
@@ -36,7 +36,7 @@ import com.facebook.buck.step.fs.MakeCleanDirectoryStep;
 import com.facebook.buck.step.fs.MkdirStep;
 import com.facebook.buck.step.fs.SymlinkFileStep;
 import com.facebook.buck.step.fs.WriteFileStep;
-import com.facebook.buck.zip.ZipCompressionLevel;
+import com.facebook.buck.util.zip.ZipCompressionLevel;
 import com.facebook.buck.zip.ZipStep;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -175,42 +175,42 @@ public class JarFattener extends AbstractBuildRuleWithDeclaredAndExtraDeps
             ZipCompressionLevel.MIN_COMPRESSION_LEVEL,
             fatJarDir);
 
-    Path pathToSrcsList =
-        BuildTargets.getGenPath(getProjectFilesystem(), getBuildTarget(), "__%s__srcs");
+    CompilerParameters compilerParameters =
+        CompilerParameters.builder()
+            .setClasspathEntries(ImmutableSortedSet.of())
+            .setSourceFilePaths(javaSourceFilePaths.build())
+            .setStandardPaths(getBuildTarget(), getProjectFilesystem())
+            .setOutputDirectory(fatJarDir)
+            .build();
+
     steps.add(
         MkdirStep.of(
             BuildCellRelativePath.fromCellRelativePath(
                 context.getBuildCellRootPath(),
                 getProjectFilesystem(),
-                pathToSrcsList.getParent())));
+                compilerParameters.getPathToSourcesList().getParent())));
 
-    CompileToJarStepFactory compileStepFactory =
-        new JavacToJarStepFactory(javac, javacOptions, JavacOptionsAmender.IDENTITY);
+    JavacToJarStepFactory compileStepFactory =
+        new JavacToJarStepFactory(javac, javacOptions, ExtraClasspathFromContextFunction.EMPTY);
 
     compileStepFactory.createCompileStep(
         context,
-        javaSourceFilePaths.build(),
         getBuildTarget(),
         context.getSourcePathResolver(),
         getProjectFilesystem(),
-        /* classpathEntries */ ImmutableSortedSet.of(),
-        fatJarDir,
-        /* workingDir */ Optional.empty(),
-        Optional.of(
-            BuildTargets.getAnnotationPath(getProjectFilesystem(), getBuildTarget(), "__%s_gen__")),
-        Optional.empty(),
-        pathToSrcsList,
+        compilerParameters,
         steps,
         buildableContext);
 
     steps.add(zipStep);
-    steps.add(
-        new JarDirectoryStep(
-            getProjectFilesystem(),
-            output,
-            ImmutableSortedSet.of(zipped),
-            /* mainClass */ FatJarMain.class.getName(),
-            /* manifestFile */ null));
+    JarParameters jarParameters =
+        JarParameters.builder()
+            .setJarPath(output)
+            .setEntriesToJar(ImmutableSortedSet.of(zipped))
+            .setMainClass(Optional.of(FatJarMain.class.getName()))
+            .setMergeManifests(true)
+            .build();
+    steps.add(new JarDirectoryStep(getProjectFilesystem(), jarParameters));
 
     buildableContext.recordArtifact(output);
 
@@ -254,7 +254,7 @@ public class JarFattener extends AbstractBuildRuleWithDeclaredAndExtraDeps
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), output);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), output);
   }
 
   @Override
@@ -263,5 +263,9 @@ public class JarFattener extends AbstractBuildRuleWithDeclaredAndExtraDeps
         .addArg("-jar")
         .addArg(SourcePathArg.of(getSourcePathToOutput()))
         .build();
+  }
+
+  public ImmutableMap<String, SourcePath> getNativeLibraries() {
+    return nativeLibraries;
   }
 }

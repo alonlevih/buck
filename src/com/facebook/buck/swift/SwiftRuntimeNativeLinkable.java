@@ -18,15 +18,16 @@ package com.facebook.buck.swift;
 
 import static com.facebook.buck.model.UnflavoredBuildTarget.BUILD_TARGET_PREFIX;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.UnflavoredBuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.SourcePath;
+import com.facebook.buck.rules.args.Arg;
 import com.facebook.buck.rules.args.StringArg;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import java.nio.file.Path;
@@ -34,7 +35,7 @@ import java.nio.file.Paths;
 import java.util.Optional;
 
 /** Pseudo linkable for representing Swift runtime library's linker arguments. */
-final class SwiftRuntimeNativeLinkable implements NativeLinkable {
+public final class SwiftRuntimeNativeLinkable implements NativeLinkable {
 
   private static final String SWIFT_RUNTIME = "_swift_runtime";
 
@@ -47,7 +48,7 @@ final class SwiftRuntimeNativeLinkable implements NativeLinkable {
               SWIFT_RUNTIME));
   private final SwiftPlatform swiftPlatform;
 
-  SwiftRuntimeNativeLinkable(SwiftPlatform swiftPlatform) {
+  public SwiftRuntimeNativeLinkable(SwiftPlatform swiftPlatform) {
     this.swiftPlatform = swiftPlatform;
   }
 
@@ -71,36 +72,13 @@ final class SwiftRuntimeNativeLinkable implements NativeLinkable {
       CxxPlatform cxxPlatform,
       Linker.LinkableDepType type,
       boolean forceLinkWhole,
-      ImmutableSet<NativeLinkable.LanguageExtensions> languageExtensions)
-      throws NoSuchBuildTargetException {
+      ImmutableSet<LanguageExtensions> languageExtensions) {
     NativeLinkableInput.Builder inputBuilder = NativeLinkableInput.builder();
 
-    ImmutableSet<Path> swiftRuntimePaths =
-        type == Linker.LinkableDepType.SHARED
-            ? ImmutableSet.of()
-            : swiftPlatform.getSwiftStaticRuntimePaths();
+    ImmutableList.Builder<Arg> linkerArgsBuilder = ImmutableList.builder();
+    populateLinkerArguments(linkerArgsBuilder, swiftPlatform, type);
+    inputBuilder.addAllArgs(linkerArgsBuilder.build());
 
-    // Fall back to shared if static isn't supported on this platform.
-    if (type == Linker.LinkableDepType.SHARED || swiftRuntimePaths.isEmpty()) {
-      inputBuilder.addAllArgs(
-          StringArg.from(
-              "-Xlinker",
-              "-rpath",
-              "-Xlinker",
-              "@executable_path/Frameworks",
-              "-Xlinker",
-              "-rpath",
-              "-Xlinker",
-              "@loader_path/Frameworks"));
-      swiftRuntimePaths = swiftPlatform.getSwiftRuntimePaths();
-    } else {
-      // Static linking requires force-loading Swift libs, since the dependency
-      // discovery mechanism is disabled otherwise.
-      inputBuilder.addAllArgs(StringArg.from("-Xlinker", "-force_load_swift_libs"));
-    }
-    for (Path swiftRuntimePath : swiftRuntimePaths) {
-      inputBuilder.addAllArgs(StringArg.from("-L", swiftRuntimePath.toString()));
-    }
     return inputBuilder.build();
   }
 
@@ -110,8 +88,33 @@ final class SwiftRuntimeNativeLinkable implements NativeLinkable {
   }
 
   @Override
-  public ImmutableMap<String, SourcePath> getSharedLibraries(CxxPlatform cxxPlatform)
-      throws NoSuchBuildTargetException {
+  public ImmutableMap<String, SourcePath> getSharedLibraries(CxxPlatform cxxPlatform) {
     return ImmutableMap.of();
+  }
+
+  public static void populateLinkerArguments(
+      ImmutableList.Builder<Arg> argsBuilder,
+      SwiftPlatform swiftPlatform,
+      Linker.LinkableDepType type) {
+    ImmutableSet<Path> swiftRuntimePaths =
+        type == Linker.LinkableDepType.SHARED
+            ? ImmutableSet.of()
+            : swiftPlatform.getSwiftStaticRuntimePaths();
+
+    // Fall back to shared if static isn't supported on this platform.
+    if (type == Linker.LinkableDepType.SHARED || swiftRuntimePaths.isEmpty()) {
+      for (Path rpath : swiftPlatform.getSwiftSharedLibraryRunPaths()) {
+        argsBuilder.addAll(StringArg.from("-Xlinker", "-rpath", "-Xlinker", rpath.toString()));
+      }
+
+      swiftRuntimePaths = swiftPlatform.getSwiftRuntimePaths();
+    } else {
+      // Static linking requires force-loading Swift libs, since the dependency
+      // discovery mechanism is disabled otherwise.
+      argsBuilder.addAll(StringArg.from("-Xlinker", "-force_load_swift_libs"));
+    }
+    for (Path swiftRuntimePath : swiftRuntimePaths) {
+      argsBuilder.addAll(StringArg.from("-L", swiftRuntimePath.toString()));
+    }
   }
 }

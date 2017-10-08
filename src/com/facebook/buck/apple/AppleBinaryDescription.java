@@ -16,19 +16,16 @@
 
 package com.facebook.buck.apple;
 
-import static com.facebook.buck.swift.SwiftLibraryDescription.isSwiftTarget;
-
 import com.facebook.buck.cxx.CxxBinaryDescription;
 import com.facebook.buck.cxx.CxxBinaryDescriptionArg;
 import com.facebook.buck.cxx.CxxCompilationDatabase;
-import com.facebook.buck.cxx.CxxStrip;
 import com.facebook.buck.cxx.FrameworkDependencies;
-import com.facebook.buck.cxx.LinkerMapMode;
-import com.facebook.buck.cxx.ProvidesLinkedBinaryDeps;
-import com.facebook.buck.cxx.StripStyle;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.cxx.HasAppleDebugSymbolDeps;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.LinkerMapMode;
+import com.facebook.buck.cxx.toolchain.StripStyle;
 import com.facebook.buck.file.WriteFile;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.model.Either;
@@ -36,7 +33,6 @@ import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.FlavorDomain;
 import com.facebook.buck.model.Flavored;
 import com.facebook.buck.model.InternalFlavor;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -96,7 +92,7 @@ public class AppleBinaryDescription
           LinkerMapMode.NO_LINKER_MAP.getFlavor());
 
   private final CxxBinaryDescription delegate;
-  private final SwiftLibraryDescription swiftDelegate;
+  private final Optional<SwiftLibraryDescription> swiftDelegate;
   private final FlavorDomain<AppleCxxPlatform> platformFlavorsToAppleCxxPlatforms;
   private final CodeSignIdentityStore codeSignIdentityStore;
   private final ProvisioningProfileStore provisioningProfileStore;
@@ -110,7 +106,8 @@ public class AppleBinaryDescription
       ProvisioningProfileStore provisioningProfileStore,
       AppleConfig appleConfig) {
     this.delegate = delegate;
-    this.swiftDelegate = swiftDelegate;
+    // TODO(T22135033): Make apple_binary not use a Swift delegate
+    this.swiftDelegate = Optional.of(swiftDelegate);
     this.platformFlavorsToAppleCxxPlatforms = platformFlavorsToAppleCxxPlatforms;
     this.codeSignIdentityStore = codeSignIdentityStore;
     this.provisioningProfileStore = provisioningProfileStore;
@@ -130,7 +127,9 @@ public class AppleBinaryDescription
 
     builder.addAll(localDomains);
     delegate.flavorDomains().ifPresent(domains -> builder.addAll(domains));
-    swiftDelegate.flavorDomains().ifPresent(domains -> builder.addAll(domains));
+    swiftDelegate
+        .flatMap(swift -> swift.flavorDomains())
+        .ifPresent(domains -> builder.addAll(domains));
 
     ImmutableSet<FlavorDomain<?>> result = builder.build();
 
@@ -151,7 +150,7 @@ public class AppleBinaryDescription
     }
     ImmutableSet<Flavor> delegateFlavors =
         ImmutableSet.copyOf(Sets.difference(flavors, NON_DELEGATE_FLAVORS));
-    if (swiftDelegate.hasFlavors(delegateFlavors)) {
+    if (swiftDelegate.map(swift -> swift.hasFlavors(delegateFlavors)).orElse(false)) {
       return true;
     }
     ImmutableList<ImmutableSortedSet<Flavor>> thinFlavorSets =
@@ -178,8 +177,7 @@ public class AppleBinaryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AppleBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AppleBinaryDescriptionArg args) {
     if (buildTarget.getFlavors().contains(APP_FLAVOR)) {
       return createBundleBuildRule(
           targetGraph, buildTarget, projectFilesystem, params, resolver, args);
@@ -207,8 +205,7 @@ public class AppleBinaryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AppleBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AppleBinaryDescriptionArg args) {
     // remove some flavors so binary will have the same output regardless their values
     BuildTarget unstrippedBinaryBuildTarget =
         buildTarget
@@ -235,7 +232,7 @@ public class AppleBinaryDescription
           cellRoots,
           args,
           unstrippedBinaryBuildTarget,
-          (ProvidesLinkedBinaryDeps) unstrippedBinaryRule);
+          (HasAppleDebugSymbolDeps) unstrippedBinaryRule);
     } else {
       return unstrippedBinaryRule;
     }
@@ -250,11 +247,9 @@ public class AppleBinaryDescription
       CellPathResolver cellRoots,
       AppleBinaryDescriptionArg args,
       BuildTarget unstrippedBinaryBuildTarget,
-      ProvidesLinkedBinaryDeps unstrippedBinaryRule)
-      throws NoSuchBuildTargetException {
+      HasAppleDebugSymbolDeps unstrippedBinaryRule) {
     BuildTarget strippedBinaryBuildTarget =
         unstrippedBinaryBuildTarget.withAppendedFlavors(
-            CxxStrip.RULE_FLAVOR,
             StripStyle.FLAVOR_DOMAIN
                 .getFlavor(buildTarget.getFlavors())
                 .orElse(StripStyle.NON_GLOBAL_SYMBOLS.getFlavor()));
@@ -270,7 +265,6 @@ public class AppleBinaryDescription
     return AppleDescriptions.createAppleDebuggableBinary(
         unstrippedBinaryBuildTarget,
         projectFilesystem,
-        params,
         resolver,
         strippedBinaryRule,
         unstrippedBinaryRule,
@@ -286,8 +280,7 @@ public class AppleBinaryDescription
       ProjectFilesystem projectFilesystem,
       BuildRuleParams params,
       BuildRuleResolver resolver,
-      AppleBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AppleBinaryDescriptionArg args) {
     if (!args.getInfoPlist().isPresent()) {
       throw new HumanReadableException(
           "Cannot create application for apple_binary '%s':\n",
@@ -339,7 +332,8 @@ public class AppleBinaryDescription
         args.getTests(),
         flavoredDebugFormat,
         appleConfig.useDryRunCodeSigning(),
-        appleConfig.cacheBundlesAndPackages());
+        appleConfig.cacheBundlesAndPackages(),
+        appleConfig.assetCatalogValidation());
   }
 
   private BuildRule createBinary(
@@ -349,8 +343,7 @@ public class AppleBinaryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AppleBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AppleBinaryDescriptionArg args) {
 
     if (AppleDescriptions.flavorsDoNotAllowLinkerMapMode(buildTarget)) {
       buildTarget = buildTarget.withoutFlavors(LinkerMapMode.NO_LINKER_MAP.getFlavor());
@@ -367,16 +360,9 @@ public class AppleBinaryDescription
 
       ImmutableSortedSet.Builder<BuildRule> thinRules = ImmutableSortedSet.naturalOrder();
       for (BuildTarget thinTarget : fatBinaryInfo.get().getThinTargets()) {
-        Optional<BuildRule> existingThinRule = resolver.getRuleOptional(thinTarget);
-        if (existingThinRule.isPresent()) {
-          thinRules.add(existingThinRule.get());
-          continue;
-        }
-        BuildRule thinRule =
+        thinRules.add(
             requireThinBinary(
-                targetGraph, thinTarget, projectFilesystem, params, resolver, cellRoots, args);
-        resolver.addToIndex(thinRule);
-        thinRules.add(thinRule);
+                targetGraph, thinTarget, projectFilesystem, params, resolver, cellRoots, args));
       }
       return MultiarchFileInfos.requireMultiarchRule(
           buildTarget, projectFilesystem, params, resolver, fatBinaryInfo.get(), thinRules.build());
@@ -393,60 +379,70 @@ public class AppleBinaryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AppleBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
-    Optional<BuildRule> existingThinRule = resolver.getRuleOptional(buildTarget);
-    if (existingThinRule.isPresent()) {
-      return existingThinRule.get();
-    }
+      AppleBinaryDescriptionArg args) {
 
-    ImmutableSortedSet.Builder<BuildTarget> extraCxxDepsBuilder = ImmutableSortedSet.naturalOrder();
-    Optional<BuildRule> swiftCompanionBuildRule =
-        swiftDelegate.createCompanionBuildRule(
-            targetGraph, buildTarget, projectFilesystem, params, resolver, cellRoots, args);
-    if (swiftCompanionBuildRule.isPresent()) {
-      // when creating a swift target, there is no need to proceed with apple binary rules,
-      // otherwise, add this swift rule as a dependency.
-      if (isSwiftTarget(buildTarget)) {
-        return swiftCompanionBuildRule.get();
-      } else {
-        extraCxxDepsBuilder.add(swiftCompanionBuildRule.get().getBuildTarget());
-        params = params.copyAppendingExtraDeps(ImmutableSet.of(swiftCompanionBuildRule.get()));
-      }
-    }
-    ImmutableSortedSet<BuildTarget> extraCxxDeps = extraCxxDepsBuilder.build();
+    return resolver.computeIfAbsent(
+        buildTarget,
+        ignored -> {
+          ImmutableSortedSet<BuildTarget> extraCxxDeps;
+          BuildRuleParams resultParams;
+          Optional<BuildRule> swiftCompanionBuildRule =
+              swiftDelegate.flatMap(
+                  swift ->
+                      swift.createCompanionBuildRule(
+                          targetGraph,
+                          buildTarget,
+                          projectFilesystem,
+                          params,
+                          resolver,
+                          cellRoots,
+                          args));
+          if (swiftCompanionBuildRule.isPresent()
+              && SwiftLibraryDescription.isSwiftTarget(buildTarget)) {
+            // when creating a swift target, there is no need to proceed with apple binary rules,
+            return swiftCompanionBuildRule.get();
+          } else if (swiftCompanionBuildRule.isPresent()) {
+            // otherwise, add this swift rule as a dependency.
+            extraCxxDeps = ImmutableSortedSet.of(swiftCompanionBuildRule.get().getBuildTarget());
+            resultParams =
+                params.copyAppendingExtraDeps(ImmutableSet.of(swiftCompanionBuildRule.get()));
+          } else {
+            extraCxxDeps = ImmutableSortedSet.of();
+            resultParams = params;
+          }
 
-    SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
-    SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
+          SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
+          SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
 
-    Optional<Path> stubBinaryPath = getStubBinaryPath(buildTarget, args);
-    if (shouldUseStubBinary(buildTarget) && stubBinaryPath.isPresent()) {
-      try {
-        return resolver.addToIndex(
-            new WriteFile(
+          Optional<Path> stubBinaryPath = getStubBinaryPath(buildTarget, args);
+          if (shouldUseStubBinary(buildTarget) && stubBinaryPath.isPresent()) {
+            try {
+              return new WriteFile(
+                  buildTarget,
+                  projectFilesystem,
+                  resultParams,
+                  Files.readAllBytes(stubBinaryPath.get()),
+                  BuildTargets.getGenPath(projectFilesystem, buildTarget, "%s"),
+                  true);
+            } catch (IOException e) {
+              throw new HumanReadableException(
+                  "Could not read stub binary " + stubBinaryPath.get());
+            }
+          } else {
+            CxxBinaryDescriptionArg.Builder delegateArg =
+                CxxBinaryDescriptionArg.builder().from(args);
+            AppleDescriptions.populateCxxBinaryDescriptionArg(
+                pathResolver, delegateArg, args, buildTarget);
+            return delegate.createBuildRule(
                 buildTarget,
                 projectFilesystem,
-                params,
-                Files.readAllBytes(stubBinaryPath.get()),
-                BuildTargets.getGenPath(projectFilesystem, buildTarget, "%s"),
-                true));
-      } catch (IOException e) {
-        throw new HumanReadableException("Could not read stub binary " + stubBinaryPath.get());
-      }
-    } else {
-      CxxBinaryDescriptionArg.Builder delegateArg = CxxBinaryDescriptionArg.builder().from(args);
-      AppleDescriptions.populateCxxBinaryDescriptionArg(
-          pathResolver, delegateArg, args, buildTarget);
-      return resolver.addToIndex(
-          delegate.createBuildRule(
-              buildTarget,
-              projectFilesystem,
-              params.getExtraDeps(),
-              resolver,
-              cellRoots,
-              delegateArg.build(),
-              extraCxxDeps));
-    }
+                resultParams.getExtraDeps(),
+                resolver,
+                cellRoots,
+                delegateArg.build(),
+                extraCxxDeps);
+          }
+        });
   }
 
   private boolean shouldUseStubBinary(BuildTarget buildTarget) {
@@ -477,8 +473,7 @@ public class AppleBinaryDescription
       CellPathResolver cellRoots,
       AppleBinaryDescriptionArg args,
       Optional<ImmutableMap<BuildTarget, Version>> selectedVersions,
-      Class<U> metadataClass)
-      throws NoSuchBuildTargetException {
+      Class<U> metadataClass) {
     if (!metadataClass.isAssignableFrom(FrameworkDependencies.class)) {
       CxxBinaryDescriptionArg.Builder delegateArg = CxxBinaryDescriptionArg.builder().from(args);
       AppleDescriptions.populateCxxBinaryDescriptionArg(

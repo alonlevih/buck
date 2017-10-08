@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.Step;
 import com.facebook.buck.step.StepExecutionResult;
@@ -25,7 +25,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
 
-public final class CxxCollectAndLogInferDependenciesStep implements Step {
+final class CxxCollectAndLogInferDependenciesStep implements Step {
 
   private Optional<CxxInferAnalyze> analysisRule;
   private Optional<CxxInferCaptureTransitive> captureOnlyRule;

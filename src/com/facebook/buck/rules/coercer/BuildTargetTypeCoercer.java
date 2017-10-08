@@ -16,8 +16,8 @@
 
 package com.facebook.buck.rules.coercer;
 
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.UnflavoredBuildTarget;
 import com.facebook.buck.parser.BuildTargetParseException;
@@ -55,8 +55,7 @@ public class BuildTargetTypeCoercer extends LeafTypeCoercer<BuildTarget> {
     } catch (BuildTargetParseException e) {
       throw new CoerceFailedException(
           String.format(
-              "Failed to coerce %s to %s, %s",
-              object, getOutputClass(), e.getHumanReadableErrorMessage()),
+              "Unable to find the target %s.\n%s", object, e.getHumanReadableErrorMessage()),
           e);
     }
   }

@@ -15,7 +15,7 @@
  */
 package com.facebook.buck.ide.intellij.model;
 
-import com.facebook.buck.cli.BuckConfig;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.ide.intellij.IjProjectPaths;
 import com.facebook.buck.ide.intellij.aggregation.AggregationMode;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
@@ -94,4 +94,6 @@ abstract class AbstractIjProjectConfig {
   public abstract boolean isGeneratingAndroidManifestEnabled();
 
   public abstract Optional<String> getOutputUrl();
+
+  public abstract Optional<Path> getExtraCompilerOutputModulesPath();
 }

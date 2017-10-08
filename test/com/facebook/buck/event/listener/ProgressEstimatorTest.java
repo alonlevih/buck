@@ -19,7 +19,7 @@ import static org.junit.Assert.assertThat;
 
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.DefaultBuckEventBus;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildId;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.facebook.buck.testutil.integration.TemporaryPaths;
@@ -43,7 +43,7 @@ public class ProgressEstimatorTest {
   @Rule public final TemporaryPaths tmp = new TemporaryPaths();
 
   public BuckEventBus getBuckEventBus() {
-    return new DefaultBuckEventBus(new FakeClock(0), new BuildId(""));
+    return new DefaultBuckEventBus(FakeClock.DO_NOT_CARE, new BuildId(""));
   }
 
   @Test
@@ -51,7 +51,7 @@ public class ProgressEstimatorTest {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     Path p = filesystem.resolve(ProgressEstimator.PROGRESS_ESTIMATIONS_JSON);
     ProgressEstimator e = new ProgressEstimator(p, getBuckEventBus());
-    assertThat(e.getEstimatedProgressOfProcessingBuckFiles().isPresent(), Matchers.equalTo(false));
+    assertThat(e.getEstimatedProgressOfParsingBuckFiles().isPresent(), Matchers.equalTo(false));
   }
 
   @Test
@@ -64,7 +64,7 @@ public class ProgressEstimatorTest {
     estimator.setCurrentCommand("project", ImmutableList.of("arg1", "arg2"));
     estimator.didParseBuckRules(10);
     assertThat(
-        estimator.getEstimatedProgressOfProcessingBuckFiles().isPresent(), Matchers.equalTo(false));
+        estimator.getEstimatedProgressOfParsingBuckFiles().isPresent(), Matchers.equalTo(false));
   }
 
   @Test
@@ -89,7 +89,7 @@ public class ProgressEstimatorTest {
     estimator.setCurrentCommand("project", ImmutableList.of("arg1", "arg2"));
     estimator.didParseBuckRules(10);
     assertThat(
-        estimator.getEstimatedProgressOfProcessingBuckFiles().get(), Matchers.closeTo(0.1, 0.01));
+        estimator.getEstimatedProgressOfParsingBuckFiles().get(), Matchers.closeTo(0.1, 0.01));
   }
 
   @Test

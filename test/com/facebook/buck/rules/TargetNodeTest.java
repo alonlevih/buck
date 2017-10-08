@@ -23,7 +23,7 @@ import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.parser.NoSuchBuildTargetException;
@@ -77,7 +77,7 @@ public class TargetNodeTest {
             "deps",
             depsStrings,
             "sourcePaths",
-            ImmutableList.of("//example/path:four", "MyClass.java"),
+            ImmutableList.of("//example/path:two", "//example/path:four", "MyClass.java"),
             "appleSource",
             "//example/path:five",
             "source",
@@ -94,6 +94,7 @@ public class TargetNodeTest {
     assertThat(
         targetNode.getExtraDeps(),
         containsInAnyOrder(
+            BuildTargetFactory.newInstance("//example/path:two"),
             BuildTargetFactory.newInstance("//example/path:four"),
             BuildTargetFactory.newInstance("//example/path:five")));
 

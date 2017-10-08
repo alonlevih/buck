@@ -16,7 +16,7 @@
 
 package com.facebook.buck.jvm.java.abi;
 
-import com.facebook.buck.jvm.java.abi.source.api.BootClasspathOracle;
+import com.facebook.buck.jvm.java.abi.source.api.SourceOnlyAbiRuleInfo;
 import com.facebook.buck.jvm.java.plugin.api.BuckJavacTaskListener;
 import com.facebook.buck.jvm.java.plugin.api.BuckJavacTaskProxy;
 import com.facebook.buck.jvm.java.plugin.api.PluginClassLoader;
@@ -28,7 +28,7 @@ public final class SourceBasedAbiStubber {
   public static BuckJavacTaskListener newValidatingTaskListener(
       PluginClassLoader pluginLoader,
       BuckJavacTaskProxy task,
-      BootClasspathOracle bootClasspathOracle,
+      SourceOnlyAbiRuleInfo ruleInfo,
       Diagnostic.Kind messageKind) {
     try {
       Class<?> validatingTaskListenerClass =
@@ -36,10 +36,10 @@ public final class SourceBasedAbiStubber {
               "com.facebook.buck.jvm.java.abi.source.ValidatingTaskListener", Object.class);
       final Constructor<?> constructor =
           validatingTaskListenerClass.getConstructor(
-              BuckJavacTaskProxy.class, BootClasspathOracle.class, Diagnostic.Kind.class);
+              BuckJavacTaskProxy.class, SourceOnlyAbiRuleInfo.class, Diagnostic.Kind.class);
 
       return BuckJavacTaskListener.wrapRealTaskListener(
-          pluginLoader, constructor.newInstance(task, bootClasspathOracle, messageKind));
+          pluginLoader, constructor.newInstance(task, ruleInfo, messageKind));
     } catch (ReflectiveOperationException e) {
       throw new HumanReadableException(
           e,

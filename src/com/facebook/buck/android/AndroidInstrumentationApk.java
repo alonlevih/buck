@@ -16,14 +16,12 @@
 
 package com.facebook.buck.android;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildRuleParams;
-import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.util.concurrent.ListeningExecutorService;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -49,24 +47,16 @@ public class AndroidInstrumentationApk extends AndroidBinary {
       ProjectFilesystem projectFilesystem,
       BuildRuleParams buildRuleParams,
       SourcePathRuleFinder ruleFinder,
-      Optional<SourcePath> proGuardJarOverride,
-      String proGuardMaxHeapSize,
-      Optional<String> proguardAgentPath,
       AndroidBinary apkUnderTest,
       ImmutableSortedSet<JavaLibrary> rulesToExcludeFromDex,
-      AndroidGraphEnhancementResult enhancementResult,
-      ListeningExecutorService dxExecutorService) {
+      AndroidGraphEnhancementResult enhancementResult) {
     super(
         buildTarget,
         projectFilesystem,
         buildRuleParams,
         ruleFinder,
-        proGuardJarOverride,
-        proGuardMaxHeapSize,
         apkUnderTest.getProguardJvmArgs(),
-        proguardAgentPath,
         apkUnderTest.getKeystore(),
-        PackageType.INSTRUMENTED,
         // Do not split the test apk even if the tested apk is split
         DexSplitMode.NO_SPLIT,
         apkUnderTest.getBuildTargetsToExcludeFromDex(),
@@ -79,22 +69,15 @@ public class AndroidInstrumentationApk extends AndroidBinary {
         apkUnderTest.getCpuFilters(),
         apkUnderTest.getResourceFilter(),
         EnumSet.noneOf(ExopackageMode.class),
-        // preprocessJavaClassBash is not supported in instrumentation
-        Optional.empty(),
         rulesToExcludeFromDex,
         enhancementResult,
-        // reordering is not supported in instrumentation. TODO(dtarjan): add support
-        false,
         Optional.empty(),
-        Optional.empty(),
-        Optional.empty(),
-        dxExecutorService,
         false,
         false,
         apkUnderTest.getManifestEntries(),
         apkUnderTest.getJavaRuntimeLauncher(),
-        Optional.empty(),
-        true);
+        true,
+        Optional.empty());
     this.apkUnderTest = apkUnderTest;
   }
 

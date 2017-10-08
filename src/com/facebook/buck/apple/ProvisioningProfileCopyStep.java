@@ -20,8 +20,8 @@ import com.dd.plist.NSDictionary;
 import com.dd.plist.NSObject;
 import com.dd.plist.PropertyListFormatException;
 import com.dd.plist.PropertyListParser;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.io.ProjectFilesystem.CopySourceMode;
+import com.facebook.buck.io.filesystem.CopySourceMode;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.Step;
@@ -144,7 +144,7 @@ class ProvisioningProfileCopyStep implements Step {
 
     final String bundleID =
         AppleInfoPlistParsing.getBundleIdFromPlistStream(
-                filesystem.getInputStreamForRelativePath(infoPlist))
+                infoPlist, filesystem.getInputStreamForRelativePath(infoPlist))
             .get();
     Optional<ProvisioningProfileMetadata> bestProfile =
         provisioningProfileUUID.isPresent()

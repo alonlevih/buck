@@ -18,8 +18,10 @@ package com.facebook.buck.cxx;
 
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRuleSuccessType;
@@ -47,7 +49,7 @@ public class CxxDependencyFileIntegrationTest {
 
   private ProjectWorkspace workspace;
   private BuildTarget target;
-  private BuildTarget preprocessTarget;
+  private BuildTarget compileTarget;
 
   @Parameterized.Parameters(name = "sandbox_sources={0},buckd={1}")
   public static Collection<Object[]> data() {
@@ -102,8 +104,8 @@ public class CxxDependencyFileIntegrationTest {
     CxxSourceRuleFactory cxxSourceRuleFactory =
         CxxSourceRuleFactoryHelper.of(workspace.getDestPath(), target, cxxPlatform);
     String source = "test.cpp";
-    preprocessTarget = cxxSourceRuleFactory.createCompileBuildTarget(source);
-    workspace.getBuildLog().assertTargetBuiltLocally(preprocessTarget.toString());
+    compileTarget = cxxSourceRuleFactory.createCompileBuildTarget(source);
+    workspace.getBuildLog().assertTargetBuiltLocally(compileTarget.toString());
   }
 
   @Test
@@ -111,7 +113,7 @@ public class CxxDependencyFileIntegrationTest {
     workspace.writeContentsToPath("#define SOMETHING", "used.h");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.BUILT_LOCALLY)));
   }
 
@@ -120,7 +122,7 @@ public class CxxDependencyFileIntegrationTest {
     workspace.writeContentsToPath("#define SOMETHING", "unused.h");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.MATCHING_DEP_FILE_RULE_KEY)));
   }
 
@@ -130,21 +132,21 @@ public class CxxDependencyFileIntegrationTest {
     workspace.writeContentsToPath("int main() { return 1; }", "test.cpp");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.BUILT_LOCALLY)));
 
     workspace.resetBuildLogFile();
     workspace.writeContentsToPath("   int main() { return 1; }", "test.cpp");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.BUILT_LOCALLY)));
 
     workspace.resetBuildLogFile();
     workspace.writeContentsToPath("int main() { return 2; }", "test.cpp");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.BUILT_LOCALLY)));
   }
 
@@ -155,7 +157,7 @@ public class CxxDependencyFileIntegrationTest {
     workspace.replaceFileContents("BUCK", "\'used.h\',", "");
     runCommand("build", target.toString()).assertSuccess();
     assertThat(
-        workspace.getBuildLog().getLogEntry(preprocessTarget).getSuccessType(),
+        workspace.getBuildLog().getLogEntry(compileTarget).getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.BUILT_LOCALLY)));
   }
 

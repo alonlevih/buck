@@ -9,6 +9,16 @@ android_binary(
 )
 
 android_binary(
+  name = 'app_with_exported_and_provided_deps',
+  manifest = 'AndroidManifest.xml',
+  keystore = '//keystores:debug',
+  deps = [
+    '//java/com/sample/lib:lib_with_dep_with_exported_and_provided_deps',
+    '//res/com/sample/base:base',
+  ],
+)
+
+android_binary(
   name = 'app_en',
   manifest = 'AndroidManifest.xml',
   keystore = '//keystores:debug',
@@ -187,6 +197,18 @@ android_binary(
 )
 
 android_binary(
+  name = 'app_with_prebuilt_native_libs',
+  manifest = 'AndroidManifest.xml',
+  keystore = '//keystores:debug',
+  package_asset_libraries = True,
+  deps = [
+    '//native/fakenative/jni:prebuilt_native',
+    '//native/fakenative/jni:prebuilt_native_asset',
+    '//res/com/sample/base:base',
+  ],
+)
+
+android_binary(
   name = 'app_cxx_lib_dep_modular',
   manifest = 'AndroidManifest.xml',
   application_module_targets = [
@@ -220,6 +242,9 @@ android_binary(
   manifest = 'AndroidManifest.xml',
   keystore = '//keystores:debug',
   enable_relinker = True,
+  relinker_whitelist = [
+    "^_Z12preserved(Bot|Mid)v$",
+  ],
   cpu_filters = [],
   deps = [
     '//res/com/sample/base:base',
@@ -802,5 +827,29 @@ android_binary(
   deps = [
     '//res/com/sample/base:base',
     '//native/cxx:symbols',
+  ],
+)
+
+android_binary(
+  name = 'app_with_string_source_map_and_aapt2',
+  build_string_source_map = True,
+  aapt_mode = 'aapt2',
+  manifest = 'AndroidManifest.xml',
+  keystore = '//keystores:debug',
+  deps = [
+    '//java/com/sample/lib:lib',
+    '//res/com/sample/base:base',
+  ],
+)
+
+android_binary(
+  name = 'app_with_string_source_map',
+  build_string_source_map = True,
+  manifest = 'AndroidManifest.xml',
+  keystore = '//keystores:debug',
+  deps = [
+    '//java/com/sample/lib:lib',
+    '//res/com/sample/base:base',
+    '//res/com/sample/with_generated_strings:res',
   ],
 )

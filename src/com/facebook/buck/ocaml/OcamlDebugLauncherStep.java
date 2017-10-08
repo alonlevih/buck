@@ -16,7 +16,7 @@
 
 package com.facebook.buck.ocaml;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.RuleKeyAppendable;
 import com.facebook.buck.rules.RuleKeyObjectSink;
 import com.facebook.buck.rules.SourcePathResolver;
@@ -65,6 +65,7 @@ public class OcamlDebugLauncherStep implements Step {
   private String getDebugLauncherScript(String debugCmdStr) {
     ImmutableList.Builder<String> debugFile = ImmutableList.builder();
     debugFile.add("#!/bin/sh");
+    debugFile.add("export CAML_LD_LIBRARY_PATH; unset -v CAML_LD_LIBRARY_PATH");
     debugFile.add(debugCmdStr);
 
     return Joiner.on("\n").join(debugFile.build());

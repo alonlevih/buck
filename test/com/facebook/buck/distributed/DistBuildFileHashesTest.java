@@ -20,14 +20,15 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cli.FakeBuckConfig;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.config.FakeBuckConfig;
 import com.facebook.buck.distributed.testutil.FakeFileContentsProvider;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashEntry;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashes;
 import com.facebook.buck.io.ArchiveMemberPath;
-import com.facebook.buck.io.MoreFiles;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.MoreFiles;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
@@ -42,6 +43,7 @@ import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.NoopBuildRuleWithDeclaredAndExtraDeps;
 import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -51,12 +53,12 @@ import com.facebook.buck.rules.TestCellBuilder;
 import com.facebook.buck.rules.Tool;
 import com.facebook.buck.slb.ThriftUtil;
 import com.facebook.buck.util.MoreCollectors;
-import com.facebook.buck.util.cache.DefaultFileHashCache;
 import com.facebook.buck.util.cache.FileHashCacheMode;
 import com.facebook.buck.util.cache.ProjectFileHashCache;
-import com.facebook.buck.util.cache.StackedFileHashCache;
-import com.facebook.buck.zip.CustomJarOutputStream;
-import com.facebook.buck.zip.ZipOutputStreams;
+import com.facebook.buck.util.cache.impl.DefaultFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
+import com.facebook.buck.util.zip.CustomJarOutputStream;
+import com.facebook.buck.util.zip.ZipOutputStreams;
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -71,6 +73,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.easymock.EasyMock;
 import org.hamcrest.Matchers;
 import org.junit.Assert;
@@ -79,6 +84,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 public class DistBuildFileHashesTest {
+  private static final long FUTURES_GET_TIMEOUT_SECONDS = 2;
+
   @Rule public TemporaryFolder tempDir = new TemporaryFolder();
 
   @Rule public TemporaryFolder archiveTempDir = new TemporaryFolder();
@@ -106,7 +113,8 @@ public class DistBuildFileHashesTest {
       secondJavaFs = secondProjectFilesystem.getRootPath().getFileSystem();
 
       buildRuleResolver =
-          new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(
+              TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
       ruleFinder = new SourcePathRuleFinder(buildRuleResolver);
       sourcePathResolver = DefaultSourcePathResolver.from(ruleFinder);
       setUpRules(buildRuleResolver, sourcePathResolver);
@@ -130,8 +138,10 @@ public class DistBuildFileHashesTest {
     public Fixture(TemporaryFolder tempDir)
         throws InterruptedException, IOException, NoSuchBuildTargetException {
       this(
-          new ProjectFilesystem(tempDir.newFolder("first").toPath().toRealPath()),
-          new ProjectFilesystem(tempDir.newFolder("second").toPath().toRealPath()));
+          TestProjectFilesystems.createProjectFilesystem(
+              tempDir.newFolder("first").toPath().toRealPath()),
+          TestProjectFilesystems.createProjectFilesystem(
+              tempDir.newFolder("second").toPath().toRealPath()));
     }
 
     protected BuckConfig createBuckConfig() {
@@ -154,7 +164,7 @@ public class DistBuildFileHashesTest {
         if (Files.isDirectory(path)) {
           cacheList.add(
               DefaultFileHashCache.createDefaultFileHashCache(
-                  new ProjectFilesystem(path), FileHashCacheMode.DEFAULT));
+                  TestProjectFilesystems.createProjectFilesystem(path), FileHashCacheMode.DEFAULT));
         }
       }
       return new StackedFileHashCache(cacheList.build());
@@ -217,7 +227,8 @@ public class DistBuildFileHashesTest {
     List<BuildJobStateFileHashes> fileHashes = f.distributedBuildFileHashes.getFileHashes();
 
     ProjectFilesystem readProjectFilesystem =
-        new ProjectFilesystem(tempDir.newFolder("read_hashes").toPath().toRealPath());
+        TestProjectFilesystems.createProjectFilesystem(
+            tempDir.newFolder("read_hashes").toPath().toRealPath());
     ProjectFileHashCache mockCache = EasyMock.createMock(ProjectFileHashCache.class);
     EasyMock.expect(mockCache.getFilesystem()).andReturn(readProjectFilesystem).anyTimes();
     EasyMock.replay(mockCache);
@@ -234,13 +245,16 @@ public class DistBuildFileHashesTest {
   }
 
   @Test
-  public void materializerWritesContents() throws Exception {
+  public void materializerWritesContents()
+      throws InterruptedException, NoSuchBuildTargetException, IOException, TimeoutException,
+          ExecutionException {
     SingleFileFixture f = new SingleFileFixture(tempDir);
 
     List<BuildJobStateFileHashes> fileHashes = f.distributedBuildFileHashes.getFileHashes();
 
     ProjectFilesystem materializeProjectFilesystem =
-        new ProjectFilesystem(tempDir.newFolder("read_hashes").getCanonicalFile().toPath());
+        TestProjectFilesystems.createProjectFilesystem(
+            tempDir.newFolder("read_hashes").getCanonicalFile().toPath());
 
     ProjectFileHashCache mockCache = EasyMock.createMock(ProjectFileHashCache.class);
     EasyMock.expect(mockCache.getFilesystem())
@@ -258,11 +272,13 @@ public class DistBuildFileHashesTest {
             // a windows filesystem. So replace '\' by '/'.
             .putFileContents(f.javaSrcPath.toString().replace('\\', '/'), f.writtenContents)
             .build();
-    MaterializerProjectFileHashCache materializer =
-        new MaterializerProjectFileHashCache(
-            mockCache, fileHashes.get(0), fakeFileContentsProvider);
+    MaterializerDummyFileHashCache materializer =
+        new MaterializerDummyFileHashCache(mockCache, fileHashes.get(0), fakeFileContentsProvider);
 
     materializer.get(f.javaSrcPath);
+    materializer
+        .getMaterializationFuturesAsList()
+        .get(FUTURES_GET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(
         materializeProjectFilesystem.readFileIfItExists(f.javaSrcPath),
         Matchers.equalTo(Optional.of(f.writtenContents)));
@@ -270,13 +286,15 @@ public class DistBuildFileHashesTest {
 
   @SuppressWarnings("PMD.EmptyCatchBlock")
   @Test
-  public void materializerThrowsOnCorruption() throws Exception {
+  public void materializerThrowsOnCorruption()
+      throws InterruptedException, NoSuchBuildTargetException, IOException, TimeoutException {
     SingleFileFixture f = new SingleFileFixture(tempDir);
 
     List<BuildJobStateFileHashes> fileHashes = f.distributedBuildFileHashes.getFileHashes();
 
     ProjectFilesystem materializeProjectFilesystem =
-        new ProjectFilesystem(tempDir.newFolder("read_hashes").getCanonicalFile().toPath());
+        TestProjectFilesystems.createProjectFilesystem(
+            tempDir.newFolder("read_hashes").getCanonicalFile().toPath());
 
     ProjectFileHashCache mockCache = EasyMock.createMock(ProjectFileHashCache.class);
     EasyMock.expect(mockCache.getFilesystem())
@@ -286,14 +304,19 @@ public class DistBuildFileHashesTest {
         .andReturn(HashCode.fromInt(42))
         .atLeastOnce();
     EasyMock.replay(mockCache);
-    MaterializerProjectFileHashCache materializer =
-        new MaterializerProjectFileHashCache(
-            mockCache, fileHashes.get(0), new InlineContentsProvider());
+    MaterializerDummyFileHashCache materializer =
+        new MaterializerDummyFileHashCache(
+            mockCache,
+            fileHashes.get(0),
+            new InlineContentsProvider(MoreExecutors.newDirectExecutorService()));
 
     try {
       materializer.get(f.javaSrcPath);
+      materializer
+          .getMaterializationFuturesAsList()
+          .get(FUTURES_GET_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       Assert.fail("Materialization should have thrown because of mismatching hash.");
-    } catch (RuntimeException e) {
+    } catch (RuntimeException | ExecutionException e) {
       // expected.
     }
   }
@@ -305,7 +328,8 @@ public class DistBuildFileHashesTest {
     List<BuildJobStateFileHashes> fileHashes = f.distributedBuildFileHashes.getFileHashes();
 
     ProjectFilesystem readProjectFilesystem =
-        new ProjectFilesystem(tempDir.newFolder("read_hashes").toPath().toRealPath());
+        TestProjectFilesystems.createProjectFilesystem(
+            tempDir.newFolder("read_hashes").toPath().toRealPath());
     ProjectFileHashCache mockCache = EasyMock.createMock(ProjectFileHashCache.class);
     EasyMock.expect(mockCache.getFilesystem()).andReturn(readProjectFilesystem).anyTimes();
     EasyMock.replay(mockCache);
@@ -329,7 +353,9 @@ public class DistBuildFileHashesTest {
 
     private ArchiveFilesFixture(Path firstFolder, Path secondFolder)
         throws InterruptedException, IOException, NoSuchBuildTargetException {
-      super(new ProjectFilesystem(firstFolder), new ProjectFilesystem(secondFolder));
+      super(
+          TestProjectFilesystems.createProjectFilesystem(firstFolder),
+          TestProjectFilesystems.createProjectFilesystem(secondFolder));
       this.firstFolder = firstFolder;
       this.secondFolder = secondFolder;
     }
@@ -364,7 +390,7 @@ public class DistBuildFileHashesTest {
               TestBuildRuleParams.create(),
               null,
               ArchiveMemberSourcePath.of(
-                  new PathSourcePath(projectFilesystem, archivePath), archiveMemberPath)));
+                  PathSourcePath.of(projectFilesystem, archivePath), archiveMemberPath)));
     }
 
     @Override
@@ -397,7 +423,8 @@ public class DistBuildFileHashesTest {
       List<BuildJobStateFileHashes> recordedHashes = f.distributedBuildFileHashes.getFileHashes();
 
       ProjectFilesystem readProjectFilesystem =
-          new ProjectFilesystem(tempDir.newFolder("read_hashes").toPath().toRealPath());
+          TestProjectFilesystems.createProjectFilesystem(
+              tempDir.newFolder("read_hashes").toPath().toRealPath());
       ProjectFileHashCache mockCache = EasyMock.createMock(ProjectFileHashCache.class);
       EasyMock.expect(mockCache.getFilesystem()).andReturn(readProjectFilesystem).anyTimes();
       EasyMock.replay(mockCache);

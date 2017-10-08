@@ -16,17 +16,17 @@
 
 package com.facebook.buck.doctor;
 
-import com.facebook.buck.cli.BuckConfig;
 import com.facebook.buck.doctor.config.BuildLogEntry;
 import com.facebook.buck.doctor.config.DoctorConfig;
 import com.facebook.buck.doctor.config.SourceControlInfo;
 import com.facebook.buck.doctor.config.UserLocalConfiguration;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.LogConfigPaths;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.util.Console;
 import com.facebook.buck.util.Optionals;
 import com.facebook.buck.util.RichStream;
+import com.facebook.buck.util.config.Configs;
 import com.facebook.buck.util.environment.BuildEnvironmentDescription;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.facebook.buck.util.versioncontrol.FullVersionControlStats;
@@ -79,10 +79,9 @@ public abstract class AbstractReport {
     this.watchmanDiagReportCollector = watchmanDiagReportCollector;
   }
 
-  protected abstract ImmutableSet<BuildLogEntry> promptForBuildSelection() throws IOException;
+  protected abstract ImmutableSet<BuildLogEntry> promptForBuildSelection();
 
-  protected Optional<SourceControlInfo> getSourceControlInfo()
-      throws IOException, InterruptedException {
+  protected Optional<SourceControlInfo> getSourceControlInfo() throws InterruptedException {
     Optional<FullVersionControlStats> versionControlStatsOptional =
         versionControlStatsGenerator.generateStats(VersionControlStatsGenerator.Mode.FULL);
     if (!versionControlStatsOptional.isPresent()) {
@@ -99,7 +98,7 @@ public abstract class AbstractReport {
             versionControlStats.getPathsChangedInWorkingDirectory()));
   }
 
-  protected abstract Optional<UserReport> getUserReport() throws IOException;
+  protected abstract Optional<UserReport> getUserReport();
 
   protected abstract Optional<FileChangesIgnoredReport> getFileChangesIgnoredReport()
       throws IOException, InterruptedException;
@@ -195,7 +194,7 @@ public abstract class AbstractReport {
     Path rootPath = filesystem.getRootPath();
     ImmutableSet<Path> knownUserLocalConfigs =
         ImmutableSet.of(
-            Paths.get(BuckConfig.BUCK_CONFIG_OVERRIDE_FILE_NAME),
+            Paths.get(Configs.DEFAULT_BUCK_CONFIG_OVERRIDE_FILE_NAME),
             LogConfigPaths.LOCAL_PATH,
             Paths.get(".watchman.local"),
             Paths.get(".buckjavaargs.local"),

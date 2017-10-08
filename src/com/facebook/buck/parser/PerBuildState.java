@@ -19,12 +19,12 @@ package com.facebook.buck.parser;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.event.ParsingEvent;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.json.BuildFileParseException;
-import com.facebook.buck.json.ProjectBuildFileParser;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
+import com.facebook.buck.parser.api.ProjectBuildFileParser;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.Cell;
 import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.rules.TargetNodeFactory;
@@ -148,7 +148,7 @@ public class PerBuildState implements AutoCloseable {
   }
 
   public ListenableFuture<TargetNode<?, ?>> getTargetNodeJob(BuildTarget target)
-      throws BuildFileParseException, BuildTargetException {
+      throws BuildTargetException {
     Cell owningCell = getCell(target);
 
     return targetNodeParsePipeline.getNodeJob(owningCell, target, parseProcessedBytes);
@@ -177,10 +177,8 @@ public class PerBuildState implements AutoCloseable {
   }
 
   private ProjectBuildFileParser createBuildFileParser(Cell cell) {
-    ProjectBuildFileParser parser =
-        cell.createBuildFileParser(this.parser.getTypeCoercerFactory(), console, eventBus);
-    parser.setEnableProfiling(enableProfiling);
-    return parser;
+    return cell.createBuildFileParser(
+        this.parser.getTypeCoercerFactory(), console, eventBus, enableProfiling);
   }
 
   private void register(Cell cell) {

@@ -16,6 +16,7 @@
 
 package com.facebook.buck.cli;
 
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.parser.PerBuildState;
 import com.facebook.buck.util.MoreExceptions;
@@ -101,13 +102,13 @@ public class AuditDependenciesCommand extends AbstractCommand {
             new PerBuildState(
                 params.getParser(),
                 params.getBuckEventBus(),
-                pool.getExecutor(),
+                pool.getListeningExecutorService(),
                 params.getCell(),
                 getEnableParserProfiling(),
                 PerBuildState.SpeculativeParsing.ENABLED)) {
       BuckQueryEnvironment env =
           BuckQueryEnvironment.from(
-              params, parserState, pool.getExecutor(), getEnableParserProfiling());
+              params, parserState, pool.getListeningExecutorService(), getEnableParserProfiling());
       return QueryCommand.runMultipleQuery(
           params,
           env,

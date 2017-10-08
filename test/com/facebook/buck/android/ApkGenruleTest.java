@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
 import com.facebook.buck.jvm.java.Keystore;
 import com.facebook.buck.jvm.java.KeystoreBuilder;
@@ -41,6 +41,7 @@ import com.facebook.buck.rules.FakeBuildRule;
 import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -87,13 +88,13 @@ public class ApkGenruleTest {
         BuildTargetFactory.newInstance(filesystem.getRootPath(), "//keystore:debug");
     Keystore keystore =
         KeystoreBuilder.createBuilder(keystoreTarget)
-            .setStore(new FakeSourcePath(filesystem, "keystore/debug.keystore"))
-            .setProperties(new FakeSourcePath(filesystem, "keystore/debug.keystore.properties"))
+            .setStore(FakeSourcePath.of(filesystem, "keystore/debug.keystore"))
+            .setProperties(FakeSourcePath.of(filesystem, "keystore/debug.keystore.properties"))
             .build(ruleResolver, filesystem);
 
     AndroidBinaryBuilder.createBuilder(
             BuildTargetFactory.newInstance(filesystem.getRootPath(), "//:fb4a"))
-        .setManifest(new FakeSourcePath("AndroidManifest.xml"))
+        .setManifest(FakeSourcePath.of("AndroidManifest.xml"))
         .setOriginalDeps(ImmutableSortedSet.of(androidLibRule.getBuildTarget()))
         .setKeystore(keystore.getBuildTarget())
         .build(ruleResolver, filesystem);
@@ -106,7 +107,8 @@ public class ApkGenruleTest {
     ProjectFilesystem projectFilesystem = FakeProjectFilesystem.createJavaOnlyFilesystem();
     FileSystem fileSystem = projectFilesystem.getRootPath().getFileSystem();
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     createSampleAndroidBinaryRule(ruleResolver, projectFilesystem);
 
     // From the Python object, create a ApkGenruleBuildRuleFactory to create a ApkGenrule.Builder
@@ -138,9 +140,9 @@ public class ApkGenruleTest {
             .setOut("signed_fb4a.apk")
             .setSrcs(
                 ImmutableList.of(
-                    new PathSourcePath(
+                    PathSourcePath.of(
                         projectFilesystem, fileSystem.getPath("src/com/facebook/signer.py")),
-                    new PathSourcePath(
+                    PathSourcePath.of(
                         projectFilesystem, fileSystem.getPath("src/com/facebook/key.properties"))))
             .build();
     BuildRuleParams params = TestBuildRuleParams.create();
@@ -302,8 +304,8 @@ public class ApkGenruleTest {
     @Override
     public ApkInfo getApkInfo() {
       return ApkInfo.builder()
-          .setApkPath(new FakeSourcePath("buck-out/gen/fb4a.apk"))
-          .setManifestPath(new FakeSourcePath("spoof"))
+          .setApkPath(FakeSourcePath.of("buck-out/gen/fb4a.apk"))
+          .setManifestPath(FakeSourcePath.of("spoof"))
           .build();
     }
   }

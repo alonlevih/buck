@@ -16,26 +16,23 @@
 
 package com.facebook.buck.jvm.groovy;
 
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.jvm.java.DefaultJavaLibraryBuilder;
-import com.facebook.buck.jvm.java.ForkMode;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.HasJavaAbi;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.jvm.java.JavaOptions;
 import com.facebook.buck.jvm.java.JavaTest;
+import com.facebook.buck.jvm.java.JavaTestDescription;
 import com.facebook.buck.jvm.java.JavacOptions;
 import com.facebook.buck.jvm.java.JavacOptionsFactory;
 import com.facebook.buck.jvm.java.TestType;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.model.MacroException;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
+import com.facebook.buck.model.macros.MacroException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.CellPathResolver;
 import com.facebook.buck.rules.Description;
-import com.facebook.buck.rules.HasContacts;
-import com.facebook.buck.rules.HasTestTimeout;
 import com.facebook.buck.rules.ImplicitDepsInferringDescription;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.args.Arg;
@@ -46,13 +43,11 @@ import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Maps;
 import java.util.Optional;
-import java.util.logging.Level;
 import org.immutables.value.Value;
 
 public class GroovyTestDescription
@@ -91,29 +86,26 @@ public class GroovyTestDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      GroovyTestDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      GroovyTestDescriptionArg args) {
     JavacOptions javacOptions =
         JavacOptionsFactory.create(
             defaultJavacOptions, buildTarget, projectFilesystem, resolver, args);
 
-    DefaultJavaLibraryBuilder defaultJavaLibraryBuilder =
-        new DefaultGroovyLibraryBuilder(
-                targetGraph,
-                buildTarget.withAppendedFlavors(JavaTest.COMPILED_TESTS_LIBRARY_FLAVOR),
-                projectFilesystem,
-                params,
-                resolver,
-                cellRoots,
-                javacOptions,
-                groovyBuckConfig)
-            .setArgs(args);
+    DefaultJavaLibraryRules defaultJavaLibraryRules =
+        DefaultGroovyLibraryBuilder.newInstance(
+            buildTarget.withAppendedFlavors(JavaTest.COMPILED_TESTS_LIBRARY_FLAVOR),
+            projectFilesystem,
+            params,
+            resolver,
+            javacOptions,
+            groovyBuckConfig,
+            args);
 
     if (HasJavaAbi.isAbiTarget(buildTarget)) {
-      return defaultJavaLibraryBuilder.buildAbi();
+      return defaultJavaLibraryRules.buildAbi();
     }
 
-    JavaLibrary testsLibrary = resolver.addToIndex(defaultJavaLibraryBuilder.build());
+    JavaLibrary testsLibrary = resolver.addToIndex(defaultJavaLibraryRules.buildLibrary());
 
     Function<String, Arg> toMacroArgFunction =
         MacroArg.toMacroArgFunction(MACRO_HANDLER, buildTarget, cellRoots, resolver);
@@ -159,27 +151,5 @@ public class GroovyTestDescription
   @BuckStyleImmutable
   @Value.Immutable
   interface AbstractGroovyTestDescriptionArg
-      extends HasContacts, HasTestTimeout, GroovyLibraryDescription.CoreArg {
-    ImmutableList<String> getVmArgs();
-
-    Optional<TestType> getTestType();
-
-    Optional<Level> getStdErrLogLevel();
-
-    Optional<Level> getStdOutLogLevel();
-
-    Optional<Long> getTestCaseTimeoutMs();
-
-    ImmutableMap<String, String> getEnv();
-
-    @Value.Default
-    default boolean getRunTestSeparately() {
-      return false;
-    }
-
-    @Value.Default
-    default ForkMode getForkMode() {
-      return ForkMode.NONE;
-    }
-  }
+      extends GroovyLibraryDescription.CoreArg, JavaTestDescription.CoreArg {}
 }

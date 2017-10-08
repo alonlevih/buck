@@ -22,8 +22,7 @@ import com.facebook.buck.graph.AcyclicDepthFirstPostOrderTraversal;
 import com.facebook.buck.graph.AcyclicDepthFirstPostOrderTraversal.CycleException;
 import com.facebook.buck.hashing.FileHashLoader;
 import com.facebook.buck.hashing.FilePathHashLoader;
-import com.facebook.buck.io.BuckPaths;
-import com.facebook.buck.json.BuildFileParseException;
+import com.facebook.buck.io.filesystem.BuckPaths;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildFileTree;
@@ -34,6 +33,7 @@ import com.facebook.buck.model.Pair;
 import com.facebook.buck.parser.BuildFileSpec;
 import com.facebook.buck.parser.ParserConfig;
 import com.facebook.buck.parser.TargetNodePredicateSpec;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.ActionGraph;
 import com.facebook.buck.rules.ActionGraphAndResolver;
 import com.facebook.buck.rules.BuildRule;
@@ -163,7 +163,10 @@ public class TargetsCommand extends AbstractCommand {
   @Option(
     name = "--show-rulekey",
     aliases = {"--show_rulekey"},
-    usage = "Print the RuleKey of each rule after the rule name."
+    forbids = {"--show-target-hash"},
+    usage =
+        "Print the RuleKey of each rule after the rule name. "
+            + "Incompatible with '--show-target-hash'."
   )
   private boolean isShowRuleKey;
 
@@ -176,7 +179,10 @@ public class TargetsCommand extends AbstractCommand {
 
   @Option(
     name = "--show-target-hash",
-    usage = "Print a stable hash of each target after the target name."
+    forbids = {"--show-rulekey"},
+    usage =
+        "Print a stable hash of each target after the target name. "
+            + "Incompatible with '--show-rulekey'."
   )
   private boolean isShowTargetHash;
 
@@ -317,13 +323,9 @@ public class TargetsCommand extends AbstractCommand {
 
   @Override
   public int runWithoutHelp(CommandRunnerParams params) throws IOException, InterruptedException {
-    if (isShowRuleKey() && isShowTargetHash()) {
-      throw new HumanReadableException("Cannot show rule key and target hash at the same time.");
-    }
-
     try (CommandThreadManager pool =
         new CommandThreadManager("Targets", getConcurrencyLimit(params.getBuckConfig()))) {
-      ListeningExecutorService executor = pool.getExecutor();
+      ListeningExecutorService executor = pool.getListeningExecutorService();
 
       // Exit early if --resolve-alias is passed in: no need to parse any build files.
       if (isResolveAlias()) {
@@ -376,10 +378,10 @@ public class TargetsCommand extends AbstractCommand {
                       .getAll(targetGraphAndBuildTargetsForShowRules.getBuildTargets())));
 
       if (shouldUseJsonFormat()) {
+        ImmutableSortedSet.Builder<BuildTarget> keysBuilder = ImmutableSortedSet.naturalOrder();
+        keysBuilder.addAll(showRulesResult.keySet());
         Iterable<TargetNode<?, ?>> matchingNodes =
-            targetGraphAndBuildTargetsForShowRules
-                .getTargetGraph()
-                .getAll(targetGraphAndBuildTargetsForShowRules.getBuildTargets());
+            targetGraphAndBuildTargetsForShowRules.getTargetGraph().getAll(keysBuilder.build());
         printJsonForTargets(
             params, executor, matchingNodes, showRulesResult, getOutputAttributes());
       } else {
@@ -744,6 +746,11 @@ public class TargetsCommand extends AbstractCommand {
             showOptions.getTargetHash(),
             sortedTargetRule,
             attributesPatternsMatcher);
+        putIfValuePresentAndMatches(
+            ShowOptionsName.RULE_TYPE.getName(),
+            showOptions.getRuleType(),
+            sortedTargetRule,
+            attributesPatternsMatcher);
       }
       String fullyQualifiedNameAttribute = "fully_qualified_name";
       if (attributesPatternsMatcher.matches(fullyQualifiedNameAttribute)) {
@@ -819,10 +826,8 @@ public class TargetsCommand extends AbstractCommand {
               .getActionGraphCache()
               .getActionGraph(
                   params.getBuckEventBus(),
-                  params.getBuckConfig().isActionGraphCheckingEnabled(),
-                  params.getBuckConfig().isSkipActionGraphCache(),
                   targetGraphAndTargetNodes.getFirst(),
-                  params.getBuckConfig().getKeySeed());
+                  params.getBuckConfig());
       actionGraph = Optional.of(result.getActionGraph());
       buildRuleResolver = Optional.of(result.getResolver());
       if (isShowRuleKey()) {
@@ -849,6 +854,15 @@ public class TargetsCommand extends AbstractCommand {
             showTransitiveRuleKeys(rule, ruleKeyFactory.get(), showOptionBuilderMap);
           }
         }
+      }
+    }
+
+    for (Entry<BuildTarget, ShowOptions.Builder> entry : showOptionBuilderMap.entrySet()) {
+      BuildTarget target = entry.getKey();
+      ShowOptions.Builder showOptionsBuilder = entry.getValue();
+      if (actionGraph.isPresent()) {
+        BuildRule rule = buildRuleResolver.get().requireRule(target);
+        showOptionsBuilder.setRuleType(rule.getType());
         if (isShowOutput() || isShowFullOutput()) {
           getUserFacingOutputPath(
                   DefaultSourcePathResolver.from(new SourcePathRuleFinder(buildRuleResolver.get())),
@@ -1150,13 +1164,16 @@ public class TargetsCommand extends AbstractCommand {
     public abstract Optional<String> getRuleKey();
 
     public abstract Optional<String> getTargetHash();
+
+    public abstract Optional<String> getRuleType();
   }
 
   private enum ShowOptionsName {
     OUTPUT_PATH("buck.outputPath"),
     GEN_SRC_PATH("buck.generatedSourcePath"),
     TARGET_HASH("buck.targetHash"),
-    RULE_KEY("buck.ruleKey");
+    RULE_KEY("buck.ruleKey"),
+    RULE_TYPE("buck.ruleType");
 
     private String name;
 

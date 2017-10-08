@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.NoopBuildRule;
@@ -35,7 +35,7 @@ import java.util.SortedSet;
  * actually doing that refactoring is non-trivial. It cannot actually be built (nor even depended
  * on), but the CxxInferEnhancer relies on being able to look it up.
  */
-public class CxxInferCaptureRulesAggregator extends NoopBuildRule {
+class CxxInferCaptureRulesAggregator extends NoopBuildRule {
 
   private final ImmutableSet<CxxInferCapture> captureRules;
   private final ImmutableSet<CxxInferCaptureRulesAggregator> transitiveAggregatingRules;

@@ -17,7 +17,7 @@
 package com.facebook.buck.cxx;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRule;
@@ -38,7 +38,7 @@ import java.nio.file.Path;
 import java.util.SortedSet;
 import java.util.stream.Stream;
 
-public class CxxInferCaptureTransitive extends AbstractBuildRule
+class CxxInferCaptureTransitive extends AbstractBuildRule
     implements HasRuntimeDeps, HasPostBuildSteps {
 
   private ImmutableSet<CxxInferCapture> captureRules;
@@ -81,7 +81,7 @@ public class CxxInferCaptureTransitive extends AbstractBuildRule
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), outputDirectory);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), outputDirectory);
   }
 
   @Override

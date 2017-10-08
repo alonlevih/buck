@@ -19,8 +19,8 @@ package com.facebook.buck.distributed;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashEntry;
 import com.facebook.buck.distributed.thrift.PathWithUnixSeparators;
 import com.facebook.buck.io.ArchiveMemberPath;
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.Pair;
 import com.facebook.buck.util.cache.FileHashCacheVerificationResult;
@@ -85,7 +85,7 @@ public class RecordingProjectFileHashCache implements ProjectFileHashCache {
     }
   }
 
-  private boolean isExternalSymlink(Path relPath) throws IOException {
+  private boolean isExternalSymlink(Path relPath) {
     return !projectFilesystem
         .getPathRelativeToProjectRoot(findSafeRealPath(projectFilesystem.resolve(relPath)))
         .isPresent();
@@ -290,7 +290,7 @@ public class RecordingProjectFileHashCache implements ProjectFileHashCache {
       fileHashEntry.setArchiveMemberPath(memberRelPath.get());
     }
     if (hashCode.isPresent()) {
-      fileHashEntry.setHashCode(hashCode.get().toString());
+      fileHashEntry.setSha1(hashCode.get().toString());
     }
     if (!isDirectory && !pathIsAbsolute && isRealPathInsideProject) {
       Path absPath = projectFilesystem.resolve(relPath).toAbsolutePath();

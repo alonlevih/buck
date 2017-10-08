@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.step.AbstractTestStep;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -27,7 +27,7 @@ import java.util.Optional;
  * Run a C/C++ test command, remembering it's exit code and streaming it's output to a given output
  * file.
  */
-public class CxxTestStep extends AbstractTestStep {
+class CxxTestStep extends AbstractTestStep {
 
   private static final String NAME = "c++ test";
 

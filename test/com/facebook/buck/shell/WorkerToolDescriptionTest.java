@@ -19,8 +19,8 @@ package com.facebook.buck.shell;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.parser.NoSuchBuildTargetException;
@@ -29,6 +29,7 @@ import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TestCellBuilder;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
@@ -66,14 +67,10 @@ public class WorkerToolDescriptionTest {
   }
 
   private static BuildTarget wrapExeInCommandAlias(BuildRuleResolver resolver, BuildRule shBinary) {
-    try {
-      return new CommandAliasBuilder(BuildTargetFactory.newInstance("//:no_output"))
-          .setExe(shBinary.getBuildTarget())
-          .build(resolver)
-          .getBuildTarget();
-    } catch (NoSuchBuildTargetException e) {
-      throw new RuntimeException(e);
-    }
+    return new CommandAliasBuilder(BuildTargetFactory.newInstance("//:no_output"))
+        .setExe(shBinary.getBuildTarget())
+        .build(resolver)
+        .getBuildTarget();
   }
 
   private static WorkerTool createWorkerTool(
@@ -81,11 +78,12 @@ public class WorkerToolDescriptionTest {
       throws NoSuchBuildTargetException {
     TargetGraph targetGraph = TargetGraph.EMPTY;
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule shBinaryRule =
         new ShBinaryBuilder(BuildTargetFactory.newInstance("//:my_exe"))
-            .setMain(new FakeSourcePath("bin/exe"))
+            .setMain(FakeSourcePath.of("bin/exe"))
             .build(resolver);
 
     BuildTarget exe = getExe.apply(resolver, shBinaryRule);

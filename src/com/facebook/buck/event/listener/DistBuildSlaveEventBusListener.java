@@ -16,16 +16,17 @@
 package com.facebook.buck.event.listener;
 
 import com.facebook.buck.artifact_cache.HttpArtifactCacheEvent;
-import com.facebook.buck.cli.BuckConfig;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.distributed.BuildSlaveFinishedStatusEvent;
+import com.facebook.buck.distributed.DistBuildMode;
 import com.facebook.buck.distributed.DistBuildService;
 import com.facebook.buck.distributed.DistBuildSlaveTimingStatsTracker;
 import com.facebook.buck.distributed.DistBuildUtil;
 import com.facebook.buck.distributed.FileMaterializationStatsTracker;
 import com.facebook.buck.distributed.thrift.BuildSlaveConsoleEvent;
 import com.facebook.buck.distributed.thrift.BuildSlaveFinishedStats;
+import com.facebook.buck.distributed.thrift.BuildSlaveRunId;
 import com.facebook.buck.distributed.thrift.BuildSlaveStatus;
-import com.facebook.buck.distributed.thrift.RunId;
 import com.facebook.buck.distributed.thrift.StampedeId;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.BuckEventListener;
@@ -35,6 +36,7 @@ import com.facebook.buck.model.BuildId;
 import com.facebook.buck.rules.BuildEvent;
 import com.facebook.buck.rules.BuildRuleEvent;
 import com.facebook.buck.timing.Clock;
+import com.facebook.buck.util.network.hostname.HostnameFetching;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.eventbus.Subscribe;
@@ -67,10 +69,11 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
   private static final int SHUTDOWN_TIMEOUT_SECONDS = 10;
 
   private final StampedeId stampedeId;
-  private final RunId runId;
+  private final BuildSlaveRunId buildSlaveRunId;
   private final Clock clock;
   private final ScheduledFuture<?> scheduledServerUpdates;
   private final ScheduledExecutorService networkScheduler;
+  private final String hostname;
 
   private final Object consoleEventsLock = new Object();
 
@@ -89,6 +92,7 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
 
   private final FileMaterializationStatsTracker fileMaterializationStatsTracker;
   private final DistBuildSlaveTimingStatsTracker slaveStatsTracker;
+  private final DistBuildMode distBuildMode;
 
   private volatile @Nullable DistBuildService distBuildService;
   private volatile Optional<Integer> exitCode = Optional.empty();
@@ -96,14 +100,16 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
 
   public DistBuildSlaveEventBusListener(
       StampedeId stampedeId,
-      RunId runId,
+      BuildSlaveRunId buildSlaveRunId,
+      DistBuildMode distBuildMode,
       Clock clock,
       DistBuildSlaveTimingStatsTracker slaveStatsTracker,
       FileMaterializationStatsTracker fileMaterializationStatsTracker,
       ScheduledExecutorService networkScheduler) {
     this(
         stampedeId,
-        runId,
+        buildSlaveRunId,
+        distBuildMode,
         clock,
         slaveStatsTracker,
         fileMaterializationStatsTracker,
@@ -113,22 +119,32 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
 
   public DistBuildSlaveEventBusListener(
       StampedeId stampedeId,
-      RunId runId,
+      BuildSlaveRunId runId,
+      DistBuildMode distBuildMode,
       Clock clock,
       DistBuildSlaveTimingStatsTracker slaveStatsTracker,
       FileMaterializationStatsTracker fileMaterializationStatsTracker,
       ScheduledExecutorService networkScheduler,
       long serverUpdatePeriodMillis) {
     this.stampedeId = stampedeId;
-    this.runId = runId;
+    this.buildSlaveRunId = runId;
     this.clock = clock;
     this.slaveStatsTracker = slaveStatsTracker;
     this.fileMaterializationStatsTracker = fileMaterializationStatsTracker;
     this.networkScheduler = networkScheduler;
+    this.distBuildMode = distBuildMode;
 
     scheduledServerUpdates =
         networkScheduler.scheduleAtFixedRate(
             this::sendServerUpdates, 0, serverUpdatePeriodMillis, TimeUnit.MILLISECONDS);
+
+    String hostname;
+    try {
+      hostname = HostnameFetching.getHostname();
+    } catch (IOException e) {
+      hostname = "unknown";
+    }
+    this.hostname = hostname;
   }
 
   public void setDistBuildService(DistBuildService service) {
@@ -167,7 +183,7 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
   private BuildSlaveStatus createBuildSlaveStatus() {
     return new BuildSlaveStatus()
         .setStampedeId(stampedeId)
-        .setRunId(runId)
+        .setBuildSlaveRunId(buildSlaveRunId)
         .setTotalRulesCount(ruleCount)
         .setRulesStartedCount(buildRulesStartedCount.get())
         .setRulesFinishedCount(buildRulesFinishedCount.get())
@@ -190,6 +206,8 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
   private BuildSlaveFinishedStats createBuildSlaveFinishedStats() {
     BuildSlaveFinishedStats finishedStats =
         new BuildSlaveFinishedStats()
+            .setHostname(hostname)
+            .setDistBuildMode(distBuildMode.name())
             .setBuildSlaveStatus(createBuildSlaveStatus())
             .setFileMaterializationStats(
                 fileMaterializationStatsTracker.getFileMaterializationStats())
@@ -207,7 +225,7 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
     }
 
     try {
-      distBuildService.storeBuildSlaveFinishedStats(stampedeId, runId, finishedStats);
+      distBuildService.storeBuildSlaveFinishedStats(stampedeId, buildSlaveRunId, finishedStats);
       sentFinishedStatsToServer = true;
     } catch (IOException e) {
       LOG.error(e, "Could not update slave status to frontend.");
@@ -220,7 +238,8 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
     }
 
     try {
-      distBuildService.updateBuildSlaveStatus(stampedeId, runId, createBuildSlaveStatus());
+      distBuildService.updateBuildSlaveStatus(
+          stampedeId, buildSlaveRunId, createBuildSlaveStatus());
     } catch (IOException e) {
       LOG.error(e, "Could not update slave status to frontend.");
     }
@@ -242,7 +261,8 @@ public class DistBuildSlaveEventBusListener implements BuckEventListener, Closea
     }
 
     try {
-      distBuildService.uploadBuildSlaveConsoleEvents(stampedeId, runId, consoleEventsCopy);
+      distBuildService.uploadBuildSlaveConsoleEvents(
+          stampedeId, buildSlaveRunId, consoleEventsCopy);
     } catch (IOException e) {
       LOG.error(e, "Could not upload slave console events to frontend.");
     }

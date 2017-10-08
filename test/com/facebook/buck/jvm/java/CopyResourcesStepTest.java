@@ -18,16 +18,16 @@ package com.facebook.buck.jvm.java;
 import static org.junit.Assert.assertEquals;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.core.JavaPackageFinder;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildContext;
-import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -38,8 +38,10 @@ import com.facebook.buck.step.fs.SymlinkFileStep;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSortedSet;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import org.junit.Test;
 
 public class CopyResourcesStepTest {
@@ -48,7 +50,7 @@ public class CopyResourcesStepTest {
       throws InterruptedException {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     // Files:
@@ -71,15 +73,19 @@ public class CopyResourcesStepTest {
             buildContext,
             ruleFinder,
             buildTarget,
-            ImmutableSet.of(
-                new FakeSourcePath(filesystem, "android/java/src/com/facebook/base/data.json"),
-                new FakeSourcePath(
-                    filesystem, "android/java/src/com/facebook/common/util/data.json")),
+            ResourcesParameters.builder()
+                .setResources(
+                    ImmutableSortedSet.of(
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/base/data.json"),
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/common/util/data.json")))
+                .setResourcesRoot(Optional.empty())
+                .build(),
             filesystem
                 .getBuckPaths()
                 .getScratchDir()
-                .resolve("android/java/lib__resources__classes"),
-            javaPackageFinder);
+                .resolve("android/java/lib__resources__classes"));
 
     Path target =
         filesystem
@@ -126,7 +132,7 @@ public class CopyResourcesStepTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     BuildContext buildContext =
         FakeBuildContext.withSourcePathResolver(DefaultSourcePathResolver.from(ruleFinder))
@@ -138,15 +144,19 @@ public class CopyResourcesStepTest {
             buildContext,
             ruleFinder,
             buildTarget,
-            ImmutableSet.<SourcePath>of(
-                new FakeSourcePath(filesystem, "android/java/src/com/facebook/base/data.json"),
-                new FakeSourcePath(
-                    filesystem, "android/java/src/com/facebook/common/util/data.json")),
+            ResourcesParameters.builder()
+                .setResources(
+                    ImmutableSortedSet.<SourcePath>of(
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/base/data.json"),
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/common/util/data.json")))
+                .setResourcesRoot(Optional.empty())
+                .build(),
             filesystem
                 .getBuckPaths()
                 .getScratchDir()
-                .resolve("android/java/src/lib__resources__classes"),
-            javaPackageFinder);
+                .resolve("android/java/src/lib__resources__classes"));
 
     Path target =
         filesystem
@@ -193,7 +203,7 @@ public class CopyResourcesStepTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     BuildContext buildContext =
         FakeBuildContext.withSourcePathResolver(DefaultSourcePathResolver.from(ruleFinder))
@@ -206,15 +216,19 @@ public class CopyResourcesStepTest {
             buildContext,
             ruleFinder,
             buildTarget,
-            ImmutableSet.of(
-                new FakeSourcePath(filesystem, "android/java/src/com/facebook/base/data.json"),
-                new FakeSourcePath(
-                    filesystem, "android/java/src/com/facebook/common/util/data.json")),
+            ResourcesParameters.builder()
+                .setResources(
+                    ImmutableSortedSet.of(
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/base/data.json"),
+                        FakeSourcePath.of(
+                            filesystem, "android/java/src/com/facebook/common/util/data.json")))
+                .setResourcesRoot(Optional.empty())
+                .build(),
             filesystem
                 .getBuckPaths()
                 .getScratchDir()
-                .resolve("android/java/src/com/facebook/lib__resources__classes"),
-            javaPackageFinder);
+                .resolve("android/java/src/com/facebook/lib__resources__classes"));
 
     Path target =
         filesystem

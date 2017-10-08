@@ -17,7 +17,7 @@
 package com.facebook.buck.artifact_cache;
 
 import com.facebook.buck.event.BuckEventBus;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.slb.HttpService;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.util.concurrent.ListeningExecutorService;
@@ -45,13 +45,11 @@ interface AbstractNetworkCacheArgs {
 
   BuckEventBus getBuckEventBus();
 
+  ListeningExecutorService getHttpFetchExecutorService();
+
   ListeningExecutorService getHttpWriteExecutorService();
 
   String getErrorTextTemplate();
 
   Optional<Long> getMaxStoreSizeBytes();
-
-  Optional<String> getThriftEndpointPath();
-
-  boolean distributedBuildModeEnabled();
 }

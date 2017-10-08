@@ -17,13 +17,12 @@
 package com.facebook.buck.android;
 
 import com.facebook.buck.android.aapt.RDotTxtEntry;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.android.packageable.AndroidPackageableCollection;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.InternalFlavor;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
-import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.BuildRules;
 import com.facebook.buck.rules.SourcePath;
@@ -32,14 +31,12 @@ import com.facebook.buck.rules.args.Arg;
 import com.facebook.buck.rules.coercer.ManifestEntries;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.MoreCollectors;
-import com.facebook.buck.util.RichStream;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Iterables;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Optional;
@@ -53,13 +50,14 @@ class AndroidBinaryResourcesGraphEnhancer {
   private static final Flavor MERGE_ASSETS_FLAVOR = InternalFlavor.of("merge_assets");
   static final Flavor GENERATE_RDOT_JAVA_FLAVOR = InternalFlavor.of("generate_rdot_java");
   private static final Flavor SPLIT_RESOURCES_FLAVOR = InternalFlavor.of("split_resources");
+  static final Flavor GENERATE_STRING_SOURCE_MAP_FLAVOR =
+      InternalFlavor.of("generate_string_source_map");
 
   private final SourcePathRuleFinder ruleFinder;
-  private final FilterResourcesStep.ResourceFilter resourceFilter;
+  private final FilterResourcesSteps.ResourceFilter resourceFilter;
   private final ResourcesFilter.ResourceCompressionMode resourceCompressionMode;
   private final ImmutableSet<String> locales;
   private final BuildTarget buildTarget;
-  private final BuildRuleParams buildRuleParams;
   private final ProjectFilesystem projectFilesystem;
   private final BuildRuleResolver ruleResolver;
   private final AndroidBinary.AaptMode aaptMode;
@@ -78,13 +76,12 @@ class AndroidBinaryResourcesGraphEnhancer {
   public AndroidBinaryResourcesGraphEnhancer(
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
-      BuildRuleParams buildRuleParams,
       BuildRuleResolver ruleResolver,
       BuildTarget originalBuildTarget,
       boolean exopackageForResources,
       SourcePath manifest,
       AndroidBinary.AaptMode aaptMode,
-      FilterResourcesStep.ResourceFilter resourceFilter,
+      FilterResourcesSteps.ResourceFilter resourceFilter,
       ResourcesFilter.ResourceCompressionMode resourceCompressionMode,
       ImmutableSet<String> locales,
       Optional<String> resourceUnionPackage,
@@ -103,7 +100,6 @@ class AndroidBinaryResourcesGraphEnhancer {
     this.resourceFilter = resourceFilter;
     this.resourceCompressionMode = resourceCompressionMode;
     this.locales = locales;
-    this.buildRuleParams = buildRuleParams;
     this.aaptMode = aaptMode;
     this.manifest = manifest;
     this.resourceUnionPackage = resourceUnionPackage;
@@ -132,16 +128,13 @@ class AndroidBinaryResourcesGraphEnhancer {
 
     Optional<PackageStringAssets> getPackageStringAssets();
 
-    ImmutableList<BuildRule> getEnhancedDeps();
-
     ImmutableList<SourcePath> getPrimaryApkAssetZips();
 
     ImmutableList<SourcePath> getExoResources();
   }
 
-  public AndroidBinaryResourcesGraphEnhancementResult enhance(
-      AndroidPackageableCollection packageableCollection) throws NoSuchBuildTargetException {
-    ImmutableList.Builder<BuildRule> enhancedDeps = ImmutableList.builder();
+  AndroidBinaryResourcesGraphEnhancementResult enhance(
+      AndroidPackageableCollection packageableCollection) {
     AndroidPackageableCollection.ResourceDetails resourceDetails =
         packageableCollection.getResourceDetails();
 
@@ -162,7 +155,6 @@ class AndroidBinaryResourcesGraphEnhancer {
           createResourcesFilter(resourceDetails, resourceRules, rulesWithResourceDirectories);
       ruleResolver.addToIndex(resourcesFilter);
       filteredResourcesProvider = resourcesFilter;
-      enhancedDeps.add(resourcesFilter);
       resourceRules = ImmutableSortedSet.of(resourcesFilter);
     } else {
       filteredResourcesProvider =
@@ -177,7 +169,6 @@ class AndroidBinaryResourcesGraphEnhancer {
           AaptPackageResources aaptPackageResources =
               createAaptPackageResources(resourceDetails, filteredResourcesProvider);
           ruleResolver.addToIndex(aaptPackageResources);
-          enhancedDeps.add(aaptPackageResources);
           aaptOutputInfo = aaptPackageResources.getAaptOutputInfo();
         }
         break;
@@ -191,7 +182,6 @@ class AndroidBinaryResourcesGraphEnhancer {
                       ? Optional.of(filteredResourcesProvider)
                       : Optional.empty());
           ruleResolver.addToIndex(aapt2Link);
-          enhancedDeps.add(aapt2Link);
           aaptOutputInfo = aapt2Link.getAaptOutputInfo();
         }
         break;
@@ -218,7 +208,6 @@ class AndroidBinaryResourcesGraphEnhancer {
                   filteredResourcesProvider,
                   aaptOutputInfo));
       ruleResolver.addToIndex(packageStringAssets.get());
-      enhancedDeps.add(packageStringAssets.get());
     }
     AndroidBinaryResourcesGraphEnhancementResult.Builder resultBuilder =
         AndroidBinaryResourcesGraphEnhancementResult.builder();
@@ -233,9 +222,7 @@ class AndroidBinaryResourcesGraphEnhancer {
               aaptOutputInfo.getPrimaryResourcesApkPath(), aaptOutputInfo.getPathToRDotTxt());
 
       ruleResolver.addToIndex(mergeAssets);
-      enhancedDeps.add(mergeAssets);
       ruleResolver.addToIndex(splitResources);
-      enhancedDeps.add(splitResources);
 
       pathToRDotTxt = splitResources.getPathToRDotTxt();
       resultBuilder.setPrimaryResourcesApkPath(splitResources.getPathToPrimaryResources());
@@ -244,15 +231,12 @@ class AndroidBinaryResourcesGraphEnhancer {
 
       ruleResolver.addToIndex(splitResources);
       ruleResolver.addToIndex(mergeAssets);
-      enhancedDeps.add(splitResources);
-      enhancedDeps.add(mergeAssets);
     } else {
       MergeAssets mergeAssets =
           createMergeAssetsRule(
               packageableCollection.getAssetsDirectories(),
               Optional.of(aaptOutputInfo.getPrimaryResourcesApkPath()));
       ruleResolver.addToIndex(mergeAssets);
-      enhancedDeps.add(mergeAssets);
 
       pathToRDotTxt = aaptOutputInfo.getPathToRDotTxt();
       resultBuilder.setPrimaryResourcesApkPath(mergeAssets.getSourcePathToOutput());
@@ -271,7 +255,11 @@ class AndroidBinaryResourcesGraphEnhancer {
                   getTargetsAsRules(resourceDetails.getResourcesWithNonEmptyResDir()),
                   filteredResourcesProvider));
       ruleResolver.addToIndex(generateRDotJava.get());
-      enhancedDeps.add(generateRDotJava.get());
+
+      if (shouldBuildStringSourceMap) {
+        ruleResolver.addToIndex(
+            createGenerateStringSourceMap(pathToRDotTxt, filteredResourcesProvider));
+      }
     }
 
     return resultBuilder
@@ -280,7 +268,6 @@ class AndroidBinaryResourcesGraphEnhancer {
         .setPathToRDotTxt(aaptOutputInfo.getPathToRDotTxt())
         .setRDotJavaDir(
             generateRDotJava.map(GenerateRDotJava::getSourcePathToGeneratedRDotJavaSrcFiles))
-        .setEnhancedDeps(enhancedDeps.build())
         .build();
   }
 
@@ -289,7 +276,6 @@ class AndroidBinaryResourcesGraphEnhancer {
     return new SplitResources(
         buildTarget.withAppendedFlavors(SPLIT_RESOURCES_FLAVOR),
         projectFilesystem,
-        buildRuleParams.withoutDeclaredDeps().withoutExtraDeps(),
         ruleFinder,
         aaptOutputPath,
         aaptRDotTxtPath);
@@ -297,8 +283,7 @@ class AndroidBinaryResourcesGraphEnhancer {
 
   private Aapt2Link createAapt2Link(
       AndroidPackageableCollection.ResourceDetails resourceDetails,
-      Optional<FilteredResourcesProvider> filteredResourcesProvider)
-      throws NoSuchBuildTargetException {
+      Optional<FilteredResourcesProvider> filteredResourcesProvider) {
     ImmutableList.Builder<Aapt2Compile> compileListBuilder = ImmutableList.builder();
     if (filteredResourcesProvider.isPresent()) {
       Optional<BuildRule> resourceFilterRule =
@@ -313,7 +298,7 @@ class AndroidBinaryResourcesGraphEnhancer {
             new Aapt2Compile(
                 buildTarget.withAppendedFlavors(InternalFlavor.of("aapt2_compile_" + index)),
                 projectFilesystem,
-                buildRuleParams.withoutDeclaredDeps().withExtraDeps(compileDeps),
+                compileDeps,
                 resDir);
         ruleResolver.addToIndex(compileRule);
         compileListBuilder.add(compileRule);
@@ -331,7 +316,6 @@ class AndroidBinaryResourcesGraphEnhancer {
     return new Aapt2Link(
         buildTarget.withAppendedFlavors(AAPT2_LINK_FLAVOR),
         projectFilesystem,
-        buildRuleParams.withoutDeclaredDeps().withoutExtraDeps(),
         ruleFinder,
         compileListBuilder.build(),
         getTargetsAsResourceDeps(resourceDetails.getResourcesWithNonEmptyResDir()),
@@ -347,14 +331,22 @@ class AndroidBinaryResourcesGraphEnhancer {
     return new GenerateRDotJava(
         buildTarget.withAppendedFlavors(GENERATE_RDOT_JAVA_FLAVOR),
         projectFilesystem,
-        buildRuleParams.withoutDeclaredDeps().withoutExtraDeps(),
         ruleFinder,
         bannedDuplicateResourceTypes,
         pathToRDotTxtFile,
         resourceUnionPackage,
-        shouldBuildStringSourceMap,
         resourceDeps,
         resourcesProvider);
+  }
+
+  private GenerateStringSourceMap createGenerateStringSourceMap(
+      SourcePath pathToRDotTxtFile, FilteredResourcesProvider filteredResourcesProvider) {
+    return new GenerateStringSourceMap(
+        buildTarget.withAppendedFlavors(GENERATE_STRING_SOURCE_MAP_FLAVOR),
+        projectFilesystem,
+        ruleFinder,
+        pathToRDotTxtFile,
+        filteredResourcesProvider);
   }
 
   private ResourcesFilter createResourcesFilter(
@@ -364,17 +356,9 @@ class AndroidBinaryResourcesGraphEnhancer {
     return new ResourcesFilter(
         buildTarget.withAppendedFlavors(RESOURCES_FILTER_FLAVOR),
         projectFilesystem,
-        buildRuleParams
-            .withDeclaredDeps(
-                ImmutableSortedSet.<BuildRule>naturalOrder()
-                    .addAll(resourceRules)
-                    .addAll(rulesWithResourceDirectories)
-                    .addAll(
-                        RichStream.from(postFilterResourcesCmd)
-                            .flatMap(a -> a.getDeps(ruleFinder).stream())
-                            .toOnceIterable())
-                    .build())
-            .withoutExtraDeps(),
+        resourceRules,
+        rulesWithResourceDirectories,
+        ruleFinder,
         resourceDetails.getResourceDirectories(),
         ImmutableSet.copyOf(resourceDetails.getWhitelistedStringDirectories()),
         locales,
@@ -389,7 +373,6 @@ class AndroidBinaryResourcesGraphEnhancer {
     return new AaptPackageResources(
         buildTarget.withAppendedFlavors(AAPT_PACKAGE_FLAVOR),
         projectFilesystem,
-        buildRuleParams.withoutDeclaredDeps().withoutExtraDeps(),
         ruleFinder,
         ruleResolver,
         manifest,
@@ -406,23 +389,14 @@ class AndroidBinaryResourcesGraphEnhancer {
       FilteredResourcesProvider filteredResourcesProvider,
       AaptOutputInfo aaptOutputInfo) {
     return new PackageStringAssets(
-        buildTarget.withAppendedFlavors(PACKAGE_STRING_ASSETS_FLAVOR),
+        buildTarget.withAppendedFlavors(
+            AndroidBinaryResourcesGraphEnhancer.PACKAGE_STRING_ASSETS_FLAVOR),
         projectFilesystem,
-        buildRuleParams
-            .withDeclaredDeps(
-                ImmutableSortedSet.<BuildRule>naturalOrder()
-                    .addAll(ruleFinder.filterBuildRuleInputs(aaptOutputInfo.getPathToRDotTxt()))
-                    .addAll(resourceRules)
-                    .addAll(rulesWithResourceDirectories)
-                    // Model the dependency on the presence of res directories, which, in the
-                    // case of resource filtering, is cached by the `ResourcesFilter` rule.
-                    .addAll(
-                        Iterables.filter(
-                            ImmutableList.of(filteredResourcesProvider), BuildRule.class))
-                    .build())
-            .withoutExtraDeps(),
-        locales,
+        ruleFinder,
+        resourceRules,
+        rulesWithResourceDirectories,
         filteredResourcesProvider,
+        locales,
         aaptOutputInfo.getPathToRDotTxt());
   }
 
@@ -432,7 +406,6 @@ class AndroidBinaryResourcesGraphEnhancer {
         new MergeAssets(
             buildTarget.withAppendedFlavors(MERGE_ASSETS_FLAVOR),
             projectFilesystem,
-            buildRuleParams.withoutDeclaredDeps().withoutExtraDeps(),
             ruleFinder,
             baseApk,
             ImmutableSortedSet.copyOf(assetsDirectories));

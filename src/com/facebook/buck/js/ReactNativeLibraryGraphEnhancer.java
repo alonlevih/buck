@@ -19,7 +19,7 @@ package com.facebook.buck.js;
 import com.facebook.buck.android.Aapt2Compile;
 import com.facebook.buck.android.AndroidResource;
 import com.facebook.buck.android.AndroidResourceDescription;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.InternalFlavor;
@@ -56,15 +56,14 @@ public class ReactNativeLibraryGraphEnhancer {
       ReactNativePlatform platform) {
     Tool jsPackager = buckConfig.getPackager(resolver);
 
-    ImmutableList<String> packagerFlags;
+    ImmutableList.Builder<String> packagerFlags = ImmutableList.builder();
+
     if (args.getPackagerFlags().isPresent()) {
       if (args.getPackagerFlags().get().isLeft()) {
-        packagerFlags = ImmutableList.copyOf(args.getPackagerFlags().get().getLeft().split("\\s+"));
+        packagerFlags.add(args.getPackagerFlags().get().getLeft().split("\\s+"));
       } else {
-        packagerFlags = args.getPackagerFlags().get().getRight();
+        packagerFlags.addAll(args.getPackagerFlags().get().getRight());
       }
-    } else {
-      packagerFlags = ImmutableList.of();
     }
 
     return new ReactNativeBundle(
@@ -85,9 +84,10 @@ public class ReactNativeLibraryGraphEnhancer {
         ReactNativeFlavors.isDevMode(baseBuildTarget),
         ReactNativeFlavors.exposeSourceMap(baseBuildTarget),
         args.getBundleName(),
-        packagerFlags,
+        packagerFlags.build(),
         jsPackager,
-        platform);
+        platform,
+        buckConfig.getMaxWorkers());
   }
 
   public AndroidReactNativeLibrary enhanceForAndroid(
@@ -118,7 +118,7 @@ public class ReactNativeLibraryGraphEnhancer {
       BuildRuleParams paramsForResource = params.withExtraDeps(ImmutableSortedSet.of(bundle));
 
       SourcePath resources =
-          new ExplicitBuildTargetSourcePath(bundle.getBuildTarget(), bundle.getResources());
+          ExplicitBuildTargetSourcePath.of(bundle.getBuildTarget(), bundle.getResources());
       BuildRule resource =
           new AndroidResource(
               buildTargetForResource,
@@ -141,7 +141,7 @@ public class ReactNativeLibraryGraphEnhancer {
               buildTargetForResource.withAppendedFlavors(
                   AndroidResourceDescription.AAPT2_COMPILE_FLAVOR),
               projectFilesystem,
-              paramsForResource,
+              ImmutableSortedSet.of(bundle),
               resources);
       resolver.addToIndex(aapt2Compile);
     }

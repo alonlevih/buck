@@ -18,13 +18,13 @@ package com.facebook.buck.rules.keys;
 
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.SimplePerfEvent;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.WatchmanOverflowEvent;
+import com.facebook.buck.io.WatchmanPathEvent;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.rules.ActionGraph;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.util.MoreCollectors;
-import com.facebook.buck.util.WatchmanOverflowEvent;
-import com.facebook.buck.util.WatchmanPathEvent;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.eventbus.EventBus;
@@ -32,7 +32,6 @@ import com.google.common.eventbus.Subscribe;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.stream.IntStream;
 import javax.annotation.Nullable;
 
@@ -153,20 +152,6 @@ public class RuleKeyCacheRecycler<V> {
   }
 
   /**
-   * Run the given {@link Function} with access to the {@link RuleKeyCache}. This is a convenience
-   * method used to abstract away handling of the {@link RuleKeyCacheScope} inside a try-resource
-   * block.
-   */
-  <T> T withRecycledCache(
-      BuckEventBus buckEventBus,
-      SettingsAffectingCache currentSettings,
-      Function<RuleKeyCache<V>, T> func) {
-    try (RuleKeyCacheScope<V> scope = withRecycledCache(buckEventBus, currentSettings)) {
-      return func.apply(scope.getCache());
-    }
-  }
-
-  /**
    * Run the given {@link Consumer} with access to the {@link RuleKeyCache}. This is a convenience
    * method used to abstract away handling of the {@link RuleKeyCacheScope} inside a try-resource
    * block.
@@ -211,11 +196,7 @@ public class RuleKeyCacheRecycler<V> {
       // hit in the action graph cache and re-use the same action graph in the next build.  So, if
       // we detect that a fresh action graph is being used, we eagerly dump the cache to free up
       // memory.
-      if (previous.actionGraph != current.actionGraph) {
-        return false;
-      }
-
-      return true;
+      return previous.actionGraph == current.actionGraph;
     }
   }
 }

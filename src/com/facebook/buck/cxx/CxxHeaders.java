@@ -16,7 +16,8 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.Preprocessor;
+import com.facebook.buck.cxx.toolchain.PathShortener;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.RuleKeyAppendable;
@@ -28,7 +29,6 @@ import com.facebook.buck.util.RichStream;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
 import java.nio.file.Path;
@@ -36,6 +36,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+import javax.annotation.Nullable;
 
 /** Encapsulates headers from a single root location. */
 public abstract class CxxHeaders implements RuleKeyAppendable {
@@ -43,6 +44,7 @@ public abstract class CxxHeaders implements RuleKeyAppendable {
   public abstract CxxPreprocessables.IncludeType getIncludeType();
 
   /** @return the root of the includes. */
+  @Nullable
   public abstract SourcePath getRoot();
 
   /** @return the path to the optional header map to use for this header pack. */
@@ -52,6 +54,7 @@ public abstract class CxxHeaders implements RuleKeyAppendable {
    * @return the path to add to the preprocessor search path to find the includes. This defaults to
    *     the root, but can be overridden to use an alternate path.
    */
+  @Nullable
   public abstract SourcePath getIncludeRoot();
 
   /**
@@ -91,10 +94,12 @@ public abstract class CxxHeaders implements RuleKeyAppendable {
             cxxHeaders.getIncludeType(),
             resolveSourcePathAndShorten(resolver, headerMap.get(), pathMinimizer).toString());
       }
-      roots.put(
-          cxxHeaders.getIncludeType(),
-          resolveSourcePathAndShorten(resolver, cxxHeaders.getIncludeRoot(), pathMinimizer)
-              .toString());
+      if (cxxHeaders.getIncludeRoot() != null) {
+        roots.put(
+            cxxHeaders.getIncludeType(),
+            resolveSourcePathAndShorten(resolver, cxxHeaders.getIncludeRoot(), pathMinimizer)
+                .toString());
+      }
     }
 
     // Define the include type ordering.  We always add local ("-I") include paths first so that
@@ -143,12 +148,22 @@ public abstract class CxxHeaders implements RuleKeyAppendable {
   @SuppressWarnings("serial")
   public static class ConflictingHeadersException extends Exception {
     public ConflictingHeadersException(Path key, SourcePath value1, SourcePath value2) {
-      super(String.format("'%s' maps to both %s.", key, ImmutableSortedSet.of(value1, value2)));
+      super(
+          String.format(
+              "'%s' maps to the following header files:\n"
+                  + "- %s\n"
+                  + "- and %s\n\n"
+                  + "Please rename one of them or export one of them to a different path.",
+              key, value1, value2));
     }
 
     public HumanReadableException getHumanReadableExceptionForBuildTarget(BuildTarget buildTarget) {
       return new HumanReadableException(
-          this, "Target '%s' uses conflicting header file mappings. %s", buildTarget, getMessage());
+          this,
+          "Target '%s' has dependencies using headers that can be included using the same path.\n\n"
+              + "%s",
+          buildTarget,
+          getMessage());
     }
   }
 }

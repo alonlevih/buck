@@ -34,10 +34,10 @@ import com.facebook.buck.apple.simulator.AppleSimulatorController;
 import com.facebook.buck.apple.simulator.AppleSimulatorDiscovery;
 import com.facebook.buck.cli.UninstallCommand.UninstallOptions;
 import com.facebook.buck.command.Build;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.event.InstallEvent;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.json.BuildFileParseException;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
@@ -46,6 +46,7 @@ import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.parser.ParserConfig;
 import com.facebook.buck.parser.PerBuildState;
 import com.facebook.buck.parser.TargetNodeSpec;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.Cell;
@@ -215,7 +216,7 @@ public class InstallCommand extends BuildCommand {
       // Get the helper targets if present
       ImmutableSet<String> installHelperTargets;
       try {
-        installHelperTargets = getInstallHelperTargets(params, pool.getExecutor());
+        installHelperTargets = getInstallHelperTargets(params, pool.getListeningExecutorService());
       } catch (BuildTargetException | BuildFileParseException e) {
         params
             .getBuckEventBus()
@@ -224,7 +225,7 @@ public class InstallCommand extends BuildCommand {
       }
 
       // Build the targets
-      exitCode = super.run(params, pool.getExecutor(), installHelperTargets);
+      exitCode = super.run(params, pool, installHelperTargets);
       if (exitCode != 0) {
         return exitCode;
       }
@@ -496,7 +497,7 @@ public class InstallCommand extends BuildCommand {
       ProjectFilesystem projectFilesystem,
       ProcessExecutor processExecutor,
       SourcePathResolver pathResolver)
-      throws IOException, NoSuchBuildTargetException {
+      throws IOException {
     AppleConfig appleConfig = params.getBuckConfig().getView(AppleConfig.class);
 
     final Path helperPath;
@@ -610,7 +611,9 @@ public class InstallCommand extends BuildCommand {
         Optional<String> appleBundleId;
         try (InputStream bundlePlistStream =
             projectFilesystem.getInputStreamForRelativePath(appleBundle.getInfoPlistPath())) {
-          appleBundleId = AppleInfoPlistParsing.getBundleIdFromPlistStream(bundlePlistStream);
+          appleBundleId =
+              AppleInfoPlistParsing.getBundleIdFromPlistStream(
+                  appleBundle.getInfoPlistPath(), bundlePlistStream);
         }
         if (!appleBundleId.isPresent()) {
           params
@@ -852,7 +855,9 @@ public class InstallCommand extends BuildCommand {
     Optional<String> appleBundleId;
     try (InputStream bundlePlistStream =
         projectFilesystem.getInputStreamForRelativePath(appleBundle.getInfoPlistPath())) {
-      appleBundleId = AppleInfoPlistParsing.getBundleIdFromPlistStream(bundlePlistStream);
+      appleBundleId =
+          AppleInfoPlistParsing.getBundleIdFromPlistStream(
+              appleBundle.getInfoPlistPath(), bundlePlistStream);
     }
     if (!appleBundleId.isPresent()) {
       params

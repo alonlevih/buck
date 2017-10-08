@@ -15,21 +15,24 @@
  */
 package com.facebook.buck.android;
 
+import com.facebook.buck.android.toolchain.AndroidNdk;
+import com.facebook.buck.android.toolchain.AndroidToolchain;
+import com.facebook.buck.android.toolchain.NdkCxxPlatform;
+import com.facebook.buck.android.toolchain.TargetCpuType;
 import com.facebook.buck.cxx.CxxHeaders;
 import com.facebook.buck.cxx.CxxPreprocessables;
 import com.facebook.buck.cxx.CxxPreprocessorInput;
 import com.facebook.buck.cxx.CxxSource;
 import com.facebook.buck.cxx.CxxSourceTypes;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.cxx.platform.NativeLinkables;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkables;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.model.Pair;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -47,6 +50,7 @@ import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.args.Arg;
 import com.facebook.buck.rules.macros.EnvironmentVariableMacroExpander;
 import com.facebook.buck.rules.macros.MacroHandler;
+import com.facebook.buck.toolchain.ToolchainProvider;
 import com.facebook.buck.util.Escaper;
 import com.facebook.buck.util.MoreStrings;
 import com.facebook.buck.util.environment.Platform;
@@ -82,13 +86,13 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
       new MacroHandler(
           ImmutableMap.of("env", new EnvironmentVariableMacroExpander(Platform.detect())));
 
-  private final Optional<String> ndkVersion;
-  private final ImmutableMap<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> cxxPlatforms;
+  private final ToolchainProvider toolchainProvider;
+  private final ImmutableMap<TargetCpuType, NdkCxxPlatform> cxxPlatforms;
 
   public NdkLibraryDescription(
-      Optional<String> ndkVersion,
-      ImmutableMap<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> cxxPlatforms) {
-    this.ndkVersion = ndkVersion;
+      ToolchainProvider toolchainProvider,
+      ImmutableMap<TargetCpuType, NdkCxxPlatform> cxxPlatforms) {
+    this.toolchainProvider = toolchainProvider;
     this.cxxPlatforms = Preconditions.checkNotNull(cxxPlatforms);
   }
 
@@ -126,7 +130,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
     return escapedArgs.build();
   }
 
-  private String getTargetArchAbi(NdkCxxPlatforms.TargetCpuType cpuType) {
+  private String getTargetArchAbi(TargetCpuType cpuType) {
     switch (cpuType) {
       case ARM:
         return "armeabi";
@@ -155,8 +159,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
    *     file and also appends relevant preprocessor and linker flags to use C/C++ library deps.
    */
   private Pair<String, Iterable<BuildRule>> generateMakefile(
-      ProjectFilesystem projectFilesystem, BuildRuleParams params, BuildRuleResolver resolver)
-      throws NoSuchBuildTargetException {
+      ProjectFilesystem projectFilesystem, BuildRuleParams params, BuildRuleResolver resolver) {
 
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
@@ -164,7 +167,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
     ImmutableList.Builder<String> outputLinesBuilder = ImmutableList.builder();
     ImmutableSortedSet.Builder<BuildRule> deps = ImmutableSortedSet.naturalOrder();
 
-    for (Map.Entry<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> entry : cxxPlatforms.entrySet()) {
+    for (Map.Entry<TargetCpuType, NdkCxxPlatform> entry : cxxPlatforms.entrySet()) {
       CxxPlatform cxxPlatform = entry.getValue().getCxxPlatform();
 
       // Collect the preprocessor input for all C/C++ library deps.  We search *through* other
@@ -221,7 +224,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
 
       // Write the relevant lines to the generated makefile.
       if (!localCflags.isEmpty() || !localLdflags.isEmpty()) {
-        NdkCxxPlatforms.TargetCpuType targetCpuType = entry.getKey();
+        TargetCpuType targetCpuType = entry.getKey();
         String targetArchAbi = getTargetArchAbi(targetCpuType);
 
         outputLinesBuilder.add(String.format("ifeq ($(TARGET_ARCH_ABI),%s)", targetArchAbi));
@@ -310,7 +313,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
                 throws IOException {
               if (EXTENSIONS_REGEX.matcher(file.toString()).matches()) {
                 srcs.add(
-                    new PathSourcePath(
+                    PathSourcePath.of(
                         filesystem, buildRulePath.resolve(rootDirectory.relativize(file))));
               }
 
@@ -332,8 +335,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      NdkLibraryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      NdkLibraryDescriptionArg args) {
     Pair<String, Iterable<BuildRule>> makefilePair =
         generateMakefile(projectFilesystem, params, resolver);
 
@@ -343,6 +345,8 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
     } else {
       sources = findSources(projectFilesystem, buildTarget.getBasePath());
     }
+    AndroidToolchain androidToolchain =
+        toolchainProvider.getByName(AndroidToolchain.DEFAULT_NAME, AndroidToolchain.class);
     return new NdkLibrary(
         buildTarget,
         projectFilesystem,
@@ -353,7 +357,7 @@ public class NdkLibraryDescription implements Description<NdkLibraryDescriptionA
         sources,
         args.getFlags(),
         args.getIsAsset(),
-        ndkVersion,
+        androidToolchain.getAndroidNdk().map(AndroidNdk::getNdkVersion),
         MACRO_HANDLER.getExpander(buildTarget, cellRoots, resolver));
   }
 

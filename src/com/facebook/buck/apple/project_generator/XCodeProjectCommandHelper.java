@@ -22,15 +22,15 @@ import com.facebook.buck.apple.AppleConfig;
 import com.facebook.buck.apple.AppleLibraryDescription;
 import com.facebook.buck.apple.XcodeWorkspaceConfigDescription;
 import com.facebook.buck.apple.XcodeWorkspaceConfigDescriptionArg;
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cli.ProjectTestsMode;
-import com.facebook.buck.cxx.CxxBuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.cli.output.PathOutputPresenter;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.config.ProjectTestsMode;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.graph.AbstractBottomUpTraversal;
 import com.facebook.buck.halide.HalideBuckConfig;
-import com.facebook.buck.json.BuildFileParseException;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
@@ -42,10 +42,12 @@ import com.facebook.buck.parser.ParserConfig;
 import com.facebook.buck.parser.PerBuildState;
 import com.facebook.buck.parser.TargetNodePredicateSpec;
 import com.facebook.buck.parser.TargetNodeSpec;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.Cell;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.Description;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetGraphAndTargets;
 import com.facebook.buck.rules.TargetNode;
@@ -57,6 +59,7 @@ import com.facebook.buck.util.MoreCollectors;
 import com.facebook.buck.util.MoreExceptions;
 import com.facebook.buck.util.ProcessManager;
 import com.facebook.buck.util.RichStream;
+import com.facebook.buck.util.config.Configs;
 import com.facebook.buck.versions.VersionException;
 import com.facebook.buck.versions.VersionedTargetGraphCache;
 import com.google.common.annotations.VisibleForTesting;
@@ -110,6 +113,8 @@ public class XCodeProjectCommandHelper {
   private final boolean combinedProject;
   private final boolean dryRun;
   private final boolean readOnly;
+  private final PathOutputPresenter outputPresenter;
+
   private final Function<Iterable<String>, ImmutableList<TargetNodeSpec>> argsParser;
   private final Function<ImmutableList<String>, Integer> buildRunner;
 
@@ -133,6 +138,7 @@ public class XCodeProjectCommandHelper {
       boolean combinedProject,
       boolean dryRun,
       boolean readOnly,
+      PathOutputPresenter outputPresenter,
       Function<Iterable<String>, ImmutableList<TargetNodeSpec>> argsParser,
       Function<ImmutableList<String>, Integer> buildRunner) {
     this.buckEventBus = buckEventBus;
@@ -154,6 +160,7 @@ public class XCodeProjectCommandHelper {
     this.combinedProject = combinedProject;
     this.dryRun = dryRun;
     this.readOnly = readOnly;
+    this.outputPresenter = outputPresenter;
     this.argsParser = argsParser;
     this.buildRunner = buildRunner;
   }
@@ -162,6 +169,8 @@ public class XCodeProjectCommandHelper {
       throws IOException, InterruptedException {
     ImmutableSet<BuildTarget> passedInTargetsSet;
     TargetGraph projectGraph;
+
+    LOG.debug("Xcode project generation: Getting the target graph");
 
     try {
       ParserConfig parserConfig = buckConfig.getView(ParserConfig.class);
@@ -182,7 +191,11 @@ public class XCodeProjectCommandHelper {
       return 1;
     }
 
-    checkForAndKillXcodeIfRunning(getIdePrompt(buckConfig));
+    LOG.debug("Xcode project generation: Killing existing Xcode if needed");
+
+    checkForAndKillXcodeIfRunning(getIDEForceKill(buckConfig));
+
+    LOG.debug("Xcode project generation: Computing graph roots");
 
     ImmutableSet<BuildTarget> graphRoots;
     if (passedInTargetsSet.isEmpty()) {
@@ -193,6 +206,8 @@ public class XCodeProjectCommandHelper {
     } else {
       graphRoots = passedInTargetsSet;
     }
+
+    LOG.debug("Xcode project generation: Getting more part of the target graph");
 
     TargetGraphAndTargets targetGraphAndTargets;
     try {
@@ -221,15 +236,34 @@ public class XCodeProjectCommandHelper {
       return 0;
     }
 
+    LOG.debug("Xcode project generation: Run the project generator");
+
     return runXcodeProjectGenerator(executor, targetGraphAndTargets, passedInTargetsSet);
   }
 
-  /**
-   * Returns true if Buck should prompt to kill a running IDE before changing its files, false
-   * otherwise.
-   */
-  private boolean getIdePrompt(BuckConfig buckConfig) {
-    return buckConfig.getBooleanValue("project", "ide_prompt", true);
+  private static String getIDEForceKillSectionName() {
+    return "project";
+  }
+
+  private static String getIDEForceKillFieldName() {
+    return "ide_force_kill";
+  }
+
+  private IDEForceKill getIDEForceKill(BuckConfig buckConfig) {
+    Optional<IDEForceKill> forceKill =
+        buckConfig.getEnum(
+            getIDEForceKillSectionName(), getIDEForceKillFieldName(), IDEForceKill.class);
+    if (forceKill.isPresent()) {
+      return forceKill.get();
+    }
+
+    // Support legacy config if new key is missing.
+    Optional<Boolean> legacyPrompty = buckConfig.getBoolean("project", "ide_prompt");
+    if (legacyPrompty.isPresent()) {
+      return legacyPrompty.get().booleanValue() ? IDEForceKill.PROMPT : IDEForceKill.NEVER;
+    }
+
+    return IDEForceKill.PROMPT;
   }
 
   private ProjectTestsMode testsMode(BuckConfig buckConfig) {
@@ -272,6 +306,8 @@ public class XCodeProjectCommandHelper {
             appleConfig.shouldMergeHeaderMapsInXcodeProject(),
             appleConfig.shouldGenerateHeaderSymlinkTreesOnly());
 
+    LOG.debug("Xcode project generation: Generates workspaces for targets");
+
     ImmutableSet<BuildTarget> requiredBuildTargets =
         generateWorkspacesForTargets(
             buckEventBus,
@@ -283,7 +319,8 @@ public class XCodeProjectCommandHelper {
             options,
             getFocusModules(executor),
             new HashMap<>(),
-            combinedProject);
+            combinedProject,
+            outputPresenter);
     if (!requiredBuildTargets.isEmpty()) {
       ImmutableMultimap<Path, String> cellPathToCellName =
           cell.getCellPathResolver().getCellPaths().asMultimap().inverse();
@@ -332,7 +369,8 @@ public class XCodeProjectCommandHelper {
       ImmutableSet<ProjectGenerator.Option> options,
       FocusedModuleTargetMatcher focusModules,
       Map<Path, ProjectGenerator> projectGenerators,
-      boolean combinedProject)
+      boolean combinedProject,
+      PathOutputPresenter presenter)
       throws IOException, InterruptedException {
     ImmutableSet<BuildTarget> targets;
     if (passedInTargetsSet.isEmpty()) {
@@ -391,13 +429,17 @@ public class XCodeProjectCommandHelper {
               swiftBuckConfig);
       Preconditions.checkNotNull(
           executorService, "CommandRunnerParams does not have executor for PROJECT pool");
-      generator.generateWorkspaceAndDependentProjects(projectGenerators, executorService);
+      Path outputPath =
+          generator.generateWorkspaceAndDependentProjects(projectGenerators, executorService);
+
       ImmutableSet<BuildTarget> requiredBuildTargetsForWorkspace =
           generator.getRequiredBuildTargets();
       LOG.debug(
           "Required build targets for workspace %s: %s",
           inputTarget, requiredBuildTargetsForWorkspace);
       requiredBuildTargetsBuilder.addAll(requiredBuildTargetsForWorkspace);
+
+      presenter.present(inputTarget.getFullyQualifiedName(), outputPath);
     }
 
     return requiredBuildTargetsBuilder.build();
@@ -489,8 +531,14 @@ public class XCodeProjectCommandHelper {
     return (TargetNode<XcodeWorkspaceConfigDescriptionArg, ?>) targetNode;
   }
 
-  private void checkForAndKillXcodeIfRunning(boolean enablePrompt)
+  private void checkForAndKillXcodeIfRunning(IDEForceKill forceKill)
       throws InterruptedException, IOException {
+    if (forceKill == IDEForceKill.NEVER) {
+      // We don't even check if Xcode is running because pkill can hang.
+      LOG.debug("Prompt to kill Xcode is disabled");
+      return;
+    }
+
     if (!processManager.isPresent()) {
       LOG.warn("Could not check if Xcode is running (no process manager)");
       return;
@@ -501,37 +549,57 @@ public class XCodeProjectCommandHelper {
       return;
     }
 
-    boolean canPromptResult = canPrompt(environment);
-    if (enablePrompt && canPromptResult) {
-      if (prompt(
-          "Xcode is currently running. Buck will modify files Xcode currently has "
-              + "open, which can cause it to become unstable.\n\n"
-              + "Kill Xcode and continue?")) {
-        processManager.get().killProcess(XCODE_PROCESS_NAME);
-      } else {
-        console
-            .getStdOut()
-            .println(
-                console
-                    .getAnsi()
-                    .asWarningText(
-                        "Xcode is running. Generated projects might be lost or corrupted if Xcode "
-                            + "currently has them open."));
-      }
-      console
-          .getStdOut()
-          .format(
-              "To disable this prompt in the future, add the following to %s: \n\n"
-                  + "[project]\n"
-                  + "  ide_prompt = false\n\n",
-              cell.getFilesystem()
-                  .getRootPath()
-                  .resolve(BuckConfig.BUCK_CONFIG_OVERRIDE_FILE_NAME)
-                  .toAbsolutePath());
-    } else {
-      LOG.debug(
-          "Xcode is running, but cannot prompt to kill it (enabled %s, can prompt %s)",
-          enablePrompt, canPromptResult);
+    switch (forceKill) {
+      case PROMPT:
+        {
+          boolean canPromptResult = canPrompt(environment);
+          if (canPromptResult) {
+            if (prompt(
+                "Xcode is currently running. Buck will modify files Xcode currently has "
+                    + "open, which can cause it to become unstable.\n\n"
+                    + "Kill Xcode and continue?")) {
+              processManager.get().killProcess(XCODE_PROCESS_NAME);
+            } else {
+              console
+                  .getStdOut()
+                  .println(
+                      console
+                          .getAnsi()
+                          .asWarningText(
+                              "Xcode is running. Generated projects might be lost or corrupted if Xcode "
+                                  + "currently has them open."));
+            }
+            console
+                .getStdOut()
+                .format(
+                    "To disable this prompt in the future, add the following to %s: \n\n"
+                        + "[%s]\n"
+                        + "  %s = %s\n\n"
+                        + "If you would like to always kill Xcode, use '%s'.\n",
+                    cell.getFilesystem()
+                        .getRootPath()
+                        .resolve(Configs.DEFAULT_BUCK_CONFIG_OVERRIDE_FILE_NAME)
+                        .toAbsolutePath(),
+                    getIDEForceKillSectionName(),
+                    getIDEForceKillFieldName(),
+                    IDEForceKill.NEVER.toString().toLowerCase(),
+                    IDEForceKill.ALWAYS.toString().toLowerCase());
+          } else {
+            LOG.debug(
+                "Xcode is running, but cannot prompt to kill it (force kill %s, can prompt %s)",
+                forceKill.toString(), canPromptResult);
+          }
+          break;
+        }
+      case ALWAYS:
+        {
+          LOG.debug("Will try to force kill Xcode without prompting...");
+          processManager.get().killProcess(XCODE_PROCESS_NAME);
+          console.getStdOut().println(console.getAnsi().asWarningText("Xcode was force killed."));
+          break;
+        }
+      case NEVER:
+        break;
     }
   }
 
@@ -738,7 +806,7 @@ public class XCodeProjectCommandHelper {
     public LazyActionGraph(TargetGraph targetGraph, BuckEventBus buckEventBus) {
       this.targetGraph = targetGraph;
       this.resolver =
-          new BuildRuleResolver(
+          new SingleThreadedBuildRuleResolver(
               targetGraph, new DefaultTargetNodeToBuildRuleTransformer(), buckEventBus);
     }
 

@@ -21,11 +21,12 @@ import com.facebook.buck.android.AndroidDirectoryResolver;
 import com.facebook.buck.android.AndroidPlatformTarget;
 import com.facebook.buck.android.AndroidPlatformTargetSupplier;
 import com.facebook.buck.android.DefaultAndroidDirectoryResolver;
-import com.facebook.buck.cli.BuckConfig;
 import com.facebook.buck.cli.MetadataChecker;
 import com.facebook.buck.command.Build;
+import com.facebook.buck.config.ActionGraphParallelizationMode;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.config.resources.ResourcesConfig;
 import com.facebook.buck.distributed.DistBuildSlaveTimingStatsTracker.SlaveEvents;
-import com.facebook.buck.json.BuildFileParseException;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
@@ -33,12 +34,15 @@ import com.facebook.buck.parser.BuildTargetParser;
 import com.facebook.buck.parser.BuildTargetPatternParser;
 import com.facebook.buck.parser.DefaultParserTargetNodeFactory;
 import com.facebook.buck.parser.ParserTargetNodeFactory;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.ActionGraphAndResolver;
 import com.facebook.buck.rules.CachingBuildEngine;
 import com.facebook.buck.rules.CachingBuildEngineBuckConfig;
+import com.facebook.buck.rules.CachingBuildEngineDelegate;
 import com.facebook.buck.rules.Cell;
 import com.facebook.buck.rules.CellPathResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
+import com.facebook.buck.rules.LocalCachingBuildEngineDelegate;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetGraphAndBuildTargets;
@@ -53,9 +57,9 @@ import com.facebook.buck.rules.keys.RuleKeyFactories;
 import com.facebook.buck.step.DefaultStepRunner;
 import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.util.DefaultProcessExecutor;
-import com.facebook.buck.util.cache.DefaultFileHashCache;
 import com.facebook.buck.util.cache.ProjectFileHashCache;
-import com.facebook.buck.util.cache.StackedFileHashCache;
+import com.facebook.buck.util.cache.impl.DefaultFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
 import com.facebook.buck.util.concurrent.ConcurrencyLimit;
 import com.facebook.buck.versions.VersionException;
 import com.google.common.base.Function;
@@ -64,6 +68,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -74,6 +79,7 @@ import javax.annotation.Nullable;
 
 public class DistBuildSlaveExecutor {
   private static final Logger LOG = Logger.get(DistBuildSlaveExecutor.class);
+  private static final String LOCALHOST_ADDRESS = "localhost";
 
   private final DistBuildExecutorArgs args;
 
@@ -81,15 +87,13 @@ public class DistBuildSlaveExecutor {
 
   @Nullable private ActionGraphAndResolver actionGraphAndResolver;
 
-  @Nullable private DistBuildCachingEngineDelegate cachingBuildEngineDelegate;
+  @Nullable private CachingBuildEngineDelegate cachingBuildEngineDelegate;
 
   public DistBuildSlaveExecutor(DistBuildExecutorArgs args) {
     this.args = args;
   }
 
-  public int buildAndReturnExitCode(DistBuildSlaveTimingStatsTracker tracker)
-      throws IOException, InterruptedException {
-    createBuildEngineDelegate(tracker);
+  public int buildAndReturnExitCode() throws IOException, InterruptedException {
     LocalBuilder localBuilder = new LocalBuilderImpl();
 
     DistBuildModeRunner runner = null;
@@ -101,16 +105,21 @@ public class DistBuildSlaveExecutor {
         break;
 
       case COORDINATOR:
-        runner = newCoordinatorMode();
+        runner = newCoordinatorMode(getFreePortForCoordinator());
         break;
 
       case MINION:
-        runner = newMinionMode(localBuilder);
+        runner =
+            newMinionMode(
+                localBuilder, args.getRemoteCoordinatorAddress(), args.getRemoteCoordinatorPort());
         break;
 
       case COORDINATOR_AND_MINION:
+        int localCoordinatorPort = getFreePortForCoordinator();
         runner =
-            new CoordinatorAndMinionModeRunner(newCoordinatorMode(), newMinionMode(localBuilder));
+            new CoordinatorAndMinionModeRunner(
+                newCoordinatorMode(localCoordinatorPort),
+                newMinionMode(localBuilder, LOCALHOST_ADDRESS, localCoordinatorPort));
         break;
 
       default:
@@ -121,20 +130,30 @@ public class DistBuildSlaveExecutor {
     return runner.runAndReturnExitCode();
   }
 
-  private MinionModeRunner newMinionMode(LocalBuilder localBuilder) {
+  private MinionModeRunner newMinionMode(
+      LocalBuilder localBuilder, String coordinatorAddress, int coordinatorPort) {
     return new MinionModeRunner(
-        args.getCoordinatorAddress(),
-        args.getCoordinatorPort(),
-        localBuilder,
-        args.getStampedeId());
+        coordinatorAddress, coordinatorPort, localBuilder, args.getStampedeId());
   }
 
-  private CoordinatorModeRunner newCoordinatorMode() {
+  private CoordinatorModeRunner newCoordinatorMode(int coordinatorPort) {
     BuildTargetsQueue queue =
         BuildTargetsQueue.newQueue(
             Preconditions.checkNotNull(actionGraphAndResolver).getResolver(),
             fullyQualifiedNameToBuildTarget(args.getState().getRemoteState().getTopLevelTargets()));
-    return new CoordinatorModeRunner(args.getCoordinatorPort(), queue, args.getStampedeId());
+    Optional<String> minionQueue = args.getDistBuildConfig().getMinionQueue();
+    Preconditions.checkArgument(
+        minionQueue.isPresent(),
+        "Minion queue name is missing to be able to run in Coordinator mode.");
+    CoordinatorModeRunner.EventListener listener =
+        new CoordinatorAndMinionInfoSetter(
+            args.getDistBuildService(), args.getStampedeId(), minionQueue.get());
+    return new CoordinatorModeRunner(
+        coordinatorPort,
+        queue,
+        args.getStampedeId(),
+        listener,
+        args.getDistBuildConfig().getMaxBuildNodesPerMinion());
   }
 
   private TargetGraph createTargetGraph() throws IOException, InterruptedException {
@@ -182,19 +201,19 @@ public class DistBuildSlaveExecutor {
 
     tracker.startTimer(SlaveEvents.ACTION_GRAPH_CREATION_TIME);
     actionGraphAndResolver =
-        Preconditions.checkNotNull(
-            args.getActionGraphCache()
-                .getActionGraph(
-                    args.getBuckEventBus(),
-                    /* checkActionGraphs */ false,
-                    /* skipActionGraphCache */ false,
-                    Preconditions.checkNotNull(targetGraph),
-                    args.getCacheKeySeed()));
+        args.getActionGraphCache()
+            .getActionGraph(
+                args.getBuckEventBus(),
+                /* checkActionGraphs */ false,
+                /* skipActionGraphCache */ false,
+                Preconditions.checkNotNull(targetGraph),
+                args.getCacheKeySeed(),
+                ActionGraphParallelizationMode.DISABLED);
     tracker.stopTimer(SlaveEvents.ACTION_GRAPH_CREATION_TIME);
     return actionGraphAndResolver;
   }
 
-  private DistBuildCachingEngineDelegate createBuildEngineDelegate(
+  public CachingBuildEngineDelegate createBuildEngineDelegate(
       DistBuildSlaveTimingStatsTracker tracker) throws IOException, InterruptedException {
     if (cachingBuildEngineDelegate != null) {
       return cachingBuildEngineDelegate;
@@ -204,19 +223,26 @@ public class DistBuildSlaveExecutor {
     StackedFileHashCaches caches = createStackedFileHashesAndPreload();
     tracker.stopTimer(SlaveEvents.SOURCE_FILE_PRELOAD_TIME);
     createActionGraphAndResolver(tracker);
-    SourcePathRuleFinder ruleFinder =
-        new SourcePathRuleFinder(Preconditions.checkNotNull(actionGraphAndResolver).getResolver());
-    cachingBuildEngineDelegate =
-        new DistBuildCachingEngineDelegate(
-            DefaultSourcePathResolver.from(ruleFinder),
-            ruleFinder,
-            caches.remoteStateCache,
-            caches.materializingCache);
+
+    DistBuildConfig remoteConfig = new DistBuildConfig(args.getRemoteRootCellConfig());
+    if (remoteConfig.materializeSourceFilesOnDemand()) {
+      SourcePathRuleFinder ruleFinder =
+          new SourcePathRuleFinder(
+              Preconditions.checkNotNull(actionGraphAndResolver).getResolver());
+      cachingBuildEngineDelegate =
+          new DistBuildCachingEngineDelegate(
+              DefaultSourcePathResolver.from(ruleFinder),
+              ruleFinder,
+              caches.remoteStateCache,
+              caches.materializingCache);
+    } else {
+      cachingBuildEngineDelegate = new LocalCachingBuildEngineDelegate(caches.remoteStateCache);
+    }
+
     return cachingBuildEngineDelegate;
   }
 
-  private StackedFileHashCache createStackOfDefaultFileHashCache()
-      throws InterruptedException, IOException {
+  private StackedFileHashCache createStackOfDefaultFileHashCache() throws InterruptedException {
     ImmutableList.Builder<ProjectFileHashCache> allCachesBuilder = ImmutableList.builder();
     Cell rootCell = args.getState().getRootCell();
 
@@ -234,7 +260,7 @@ public class DistBuildSlaveExecutor {
     // 2. Add the Operating System roots.
     allCachesBuilder.addAll(
         DefaultFileHashCache.createOsRootDirectoriesCaches(
-            rootCell.getBuckConfig().getFileHashCacheMode()));
+            args.getProjectFilesystemFactory(), rootCell.getBuckConfig().getFileHashCacheMode()));
 
     return new StackedFileHashCache(allCachesBuilder.build());
   }
@@ -308,32 +334,41 @@ public class DistBuildSlaveExecutor {
     return targetGraphCodec;
   }
 
+  public static int getFreePortForCoordinator() throws IOException {
+    // Passing argument 0 to ServerSocket will allocate a new free random port.
+    try (ServerSocket socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    }
+  }
+
   private class LocalBuilderImpl implements LocalBuilder {
+    private static final boolean KEEP_GOING = true;
     private final BuckConfig distBuildConfig;
     private final CachingBuildEngineBuckConfig engineConfig;
+    private final ResourcesConfig resourcesConfig;
 
     public LocalBuilderImpl() {
       this.distBuildConfig = args.getRemoteRootCellConfig();
       this.engineConfig = distBuildConfig.getView(CachingBuildEngineBuckConfig.class);
+      this.resourcesConfig = distBuildConfig.getView(ResourcesConfig.class);
     }
 
     @Override
-    public int buildLocallyAndReturnExitCode(Iterable<String> targetsToBuild)
+    public int buildLocallyAndReturnExitCode(Iterable<String> targetToBuildStrings)
         throws IOException, InterruptedException {
       // TODO(ruibm): Fix this to work with Android.
       MetadataChecker.checkAndCleanIfNeeded(args.getRootCell());
       final ConcurrencyLimit concurrencyLimit =
           new ConcurrencyLimit(
               4,
-              distBuildConfig.getResourceAllocationFairness(),
+              resourcesConfig.getResourceAllocationFairness(),
               4,
-              distBuildConfig.getDefaultResourceAmounts(),
-              distBuildConfig.getMaximumResourceAmounts().withCpu(4));
+              resourcesConfig.getDefaultResourceAmounts(),
+              resourcesConfig.getMaximumResourceAmounts().withCpu(4));
       final DefaultProcessExecutor processExecutor = new DefaultProcessExecutor(args.getConsole());
       try (CachingBuildEngine buildEngine =
               new CachingBuildEngine(
                   Preconditions.checkNotNull(cachingBuildEngineDelegate),
-                  args.getExecutorService(),
                   args.getExecutorService(),
                   new DefaultStepRunner(),
                   engineConfig.getBuildEngineMode(),
@@ -376,6 +411,8 @@ public class DistBuildSlaveExecutor {
                   .setCellPathResolver(args.getRootCell().getCellPathResolver())
                   .setBuildCellRootPath(args.getRootCell().getRoot())
                   .setProcessExecutor(processExecutor)
+                  .setEnvironment(distBuildConfig.getEnvironment())
+                  .setProjectFilesystemFactory(args.getProjectFilesystemFactory())
                   .build();
           Build build =
               new Build(
@@ -387,9 +424,9 @@ public class DistBuildSlaveExecutor {
                   args.getClock(),
                   executionContext)) {
 
-        return build.executeAndPrintFailuresToEventBus(
-            fullyQualifiedNameToBuildTarget(targetsToBuild),
-            /* isKeepGoing */ true,
+        return build.executeAndPrintFailuresToEventBusThenWaitForUploadsToComplete(
+            fullyQualifiedNameToBuildTarget(targetToBuildStrings),
+            KEEP_GOING,
             args.getBuckEventBus(),
             args.getConsole(),
             Optional.empty());

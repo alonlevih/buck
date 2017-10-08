@@ -19,9 +19,9 @@ package com.facebook.buck.ocaml;
 import com.facebook.buck.cxx.CxxHeaders;
 import com.facebook.buck.cxx.CxxPreprocessorInput;
 import com.facebook.buck.cxx.CxxSource;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.model.UnflavoredBuildTarget;
@@ -52,7 +52,7 @@ import org.immutables.value.Value;
  *
  * <p>OCaml has two build modes, "native" (ocamlopt) and "bytecode" (ocamlc), and that terminology
  * is used throughout this file -- not to be confused with the "native" terminology used in
- * com.facebook.buck.cxx.platform.NativeLinkableInput.
+ * com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput.
  */
 @Value.Immutable
 @BuckStyleImmutable
@@ -280,7 +280,7 @@ abstract class AbstractOcamlBuildContext implements RuleKeyAppendable {
                               .toString()
                               .replaceFirst(
                                   OcamlCompilables.OCAML_MLL_REGEX, OcamlCompilables.OCAML_ML));
-              return new PathSourcePath(getProjectFilesystem(), out);
+              return PathSourcePath.of(getProjectFilesystem(), out);
             });
   }
 
@@ -294,7 +294,7 @@ abstract class AbstractOcamlBuildContext implements RuleKeyAppendable {
               ImmutableList.Builder<SourcePath> toReturn = ImmutableList.builder();
 
               toReturn.add(
-                  new PathSourcePath(
+                  PathSourcePath.of(
                       getProjectFilesystem(),
                       getGeneratedSourceDir()
                           .resolve(
@@ -302,7 +302,7 @@ abstract class AbstractOcamlBuildContext implements RuleKeyAppendable {
                                   OcamlCompilables.OCAML_MLY_REGEX, OcamlCompilables.OCAML_ML))));
 
               toReturn.add(
-                  new PathSourcePath(
+                  PathSourcePath.of(
                       getProjectFilesystem(),
                       getGeneratedSourceDir()
                           .resolve(

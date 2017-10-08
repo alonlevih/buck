@@ -6,7 +6,7 @@ import textwrap
 
 from tracing import Tracing
 from buck_tool import BuckTool, JAVA_MAX_HEAP_SIZE_MB, platform_path
-from buck_tool import BuckToolException, RestartBuck
+from buck_tool import BuckToolException
 from subprocutils import check_output, which
 import buck_version
 
@@ -21,12 +21,11 @@ RESOURCES = {
     "libjcocoa.dylib": "third-party/java/ObjCBridge/libjcocoa.dylib",
     "logging_config_file": "config/logging.properties.st",
     "native_exopackage_fake_path": "assets/android/native-exopackage-fakes.apk",
-    "path_to_asm_jar": "third-party/java/asm/asm-debug-all-5.0.3.jar",
+    "path_to_asm_jar": "third-party/java/asm/asm-debug-all-6.0_BETA.jar",
     "path_to_rawmanifest_py": "src/com/facebook/buck/util/versioncontrol/rawmanifest.py",
     "path_to_intellij_py": "src/com/facebook/buck/ide/intellij/deprecated/intellij.py",
     "path_to_pex": "src/com/facebook/buck/python/make_pex.py",
     "path_to_sh_binary_template": "src/com/facebook/buck/shell/sh_binary_template",
-    "path_to_static_content": "webserver/static",
     "report_generator_jar": "build/report-generator.jar",
     "testrunner_classes": "build/testrunner/classes",
 
@@ -128,7 +127,7 @@ class BuckRepo(BuckTool):
         return self._join_buck_dir("build/bootstrapper/bootstrapper.jar")
 
     def _get_java_classpath(self):
-        classpath_file_path = os.path.join(self.buck_dir, "programs", "classpaths")
+        classpath_file_path = os.path.join(self.buck_dir, "build", "classpath", "classpaths")
         classpath_entries = []
         with open(classpath_file_path, 'r') as classpath_file:
             for line in classpath_file.readlines():

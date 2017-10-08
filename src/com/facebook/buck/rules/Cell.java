@@ -16,17 +16,21 @@
 
 package com.facebook.buck.rules;
 
-import com.facebook.buck.cli.BuckConfig;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.io.ExecutableFinder;
-import com.facebook.buck.io.ProjectFilesystem;
 import com.facebook.buck.io.Watchman;
-import com.facebook.buck.json.ProjectBuildFileParser;
-import com.facebook.buck.json.ProjectBuildFileParserOptions;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.skylark.SkylarkFilesystem;
+import com.facebook.buck.json.HybridProjectBuildFileParser;
+import com.facebook.buck.json.PythonDslProjectBuildFileParser;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
 import com.facebook.buck.parser.ParserConfig;
+import com.facebook.buck.parser.api.ProjectBuildFileParser;
+import com.facebook.buck.parser.options.ProjectBuildFileParserOptions;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
+import com.facebook.buck.skylark.parser.SkylarkProjectBuildFileParser;
 import com.facebook.buck.util.Console;
 import com.facebook.buck.util.DefaultProcessExecutor;
 import com.facebook.buck.util.HumanReadableException;
@@ -87,7 +91,7 @@ public class Cell {
         Suppliers.memoize(
             () -> {
               try {
-                return knownBuildRuleTypesFactory.create(config, filesystem, sdkEnvironment);
+                return knownBuildRuleTypesFactory.create(config, filesystem);
               } catch (IOException e) {
                 throw new RuntimeException(
                     String.format(
@@ -255,6 +259,19 @@ public class Cell {
    */
   public ProjectBuildFileParser createBuildFileParser(
       TypeCoercerFactory typeCoercerFactory, Console console, BuckEventBus eventBus) {
+    return createBuildFileParser(
+        typeCoercerFactory, console, eventBus, /* enableProfiling */ false);
+  }
+
+  /**
+   * Same as @{{@link #createBuildFileParser(TypeCoercerFactory, Console, BuckEventBus)}} but
+   * provides a way to configure whether parse profiling should be enabled
+   */
+  public ProjectBuildFileParser createBuildFileParser(
+      TypeCoercerFactory typeCoercerFactory,
+      Console console,
+      BuckEventBus eventBus,
+      boolean enableProfiling) {
 
     ParserConfig parserConfig = getBuckConfig().getView(ParserConfig.class);
 
@@ -269,8 +286,9 @@ public class Cell {
     String pythonInterpreter = parserConfig.getPythonInterpreter(new ExecutableFinder());
     Optional<String> pythonModuleSearchPath = parserConfig.getPythonModuleSearchPath();
 
-    return new ProjectBuildFileParser(
+    ProjectBuildFileParserOptions buildFileParserOptions =
         ProjectBuildFileParserOptions.builder()
+            .setEnableProfiling(enableProfiling)
             .setProjectRoot(getFilesystem().getRootPath())
             .setCellRoots(getCellPathResolver().getCellPaths())
             .setCellName(getCanonicalName().orElse(""))
@@ -290,11 +308,24 @@ public class Cell {
             .setUseMercurialGlob(useMercurialGlob)
             .setRawConfig(getBuckConfig().getRawConfigForParser())
             .setBuildFileImportWhitelist(parserConfig.getBuildFileImportWhitelist())
-            .build(),
-        typeCoercerFactory,
-        config.getEnvironment(),
-        eventBus,
-        new DefaultProcessExecutor(console));
+            .build();
+    PythonDslProjectBuildFileParser pythonDslProjectBuildFileParser =
+        new PythonDslProjectBuildFileParser(
+            buildFileParserOptions,
+            typeCoercerFactory,
+            config.getEnvironment(),
+            eventBus,
+            new DefaultProcessExecutor(console));
+    if (parserConfig.isPolyglotParsingEnabled()) {
+      return HybridProjectBuildFileParser.using(
+          pythonDslProjectBuildFileParser,
+          SkylarkProjectBuildFileParser.using(
+              buildFileParserOptions,
+              eventBus,
+              SkylarkFilesystem.using(filesystem),
+              typeCoercerFactory));
+    }
+    return pythonDslProjectBuildFileParser;
   }
 
   @Override

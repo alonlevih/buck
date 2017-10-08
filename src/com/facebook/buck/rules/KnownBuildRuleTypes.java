@@ -19,9 +19,7 @@ package com.facebook.buck.rules;
 import com.facebook.buck.android.AndroidAarDescription;
 import com.facebook.buck.android.AndroidAppModularityDescription;
 import com.facebook.buck.android.AndroidBinaryDescription;
-import com.facebook.buck.android.AndroidBuckConfig;
 import com.facebook.buck.android.AndroidBuildConfigDescription;
-import com.facebook.buck.android.AndroidDirectoryResolver;
 import com.facebook.buck.android.AndroidInstrumentationApkDescription;
 import com.facebook.buck.android.AndroidInstrumentationTestDescription;
 import com.facebook.buck.android.AndroidLibraryCompilerFactory;
@@ -33,19 +31,20 @@ import com.facebook.buck.android.ApkGenruleDescription;
 import com.facebook.buck.android.DefaultAndroidLibraryCompilerFactory;
 import com.facebook.buck.android.DxConfig;
 import com.facebook.buck.android.GenAidlDescription;
-import com.facebook.buck.android.NdkCxxPlatform;
-import com.facebook.buck.android.NdkCxxPlatforms;
 import com.facebook.buck.android.NdkLibraryDescription;
 import com.facebook.buck.android.PrebuiltNativeLibraryDescription;
 import com.facebook.buck.android.ProGuardConfig;
 import com.facebook.buck.android.RobolectricTestDescription;
 import com.facebook.buck.android.SmartDexingStep;
+import com.facebook.buck.android.toolchain.NdkCxxPlatform;
+import com.facebook.buck.android.toolchain.NdkCxxPlatformsProvider;
+import com.facebook.buck.android.toolchain.TargetCpuType;
+import com.facebook.buck.android.toolchain.impl.NdkCxxPlatformsProviderFactory;
 import com.facebook.buck.apple.AppleAssetCatalogDescription;
 import com.facebook.buck.apple.AppleBinaryDescription;
 import com.facebook.buck.apple.AppleBundleDescription;
 import com.facebook.buck.apple.AppleConfig;
 import com.facebook.buck.apple.AppleCxxPlatform;
-import com.facebook.buck.apple.AppleCxxPlatforms;
 import com.facebook.buck.apple.AppleLibraryDescription;
 import com.facebook.buck.apple.ApplePackageDescription;
 import com.facebook.buck.apple.AppleResourceDescription;
@@ -58,20 +57,20 @@ import com.facebook.buck.apple.SceneKitAssetsDescription;
 import com.facebook.buck.apple.XcodePostbuildScriptDescription;
 import com.facebook.buck.apple.XcodePrebuildScriptDescription;
 import com.facebook.buck.apple.XcodeWorkspaceConfigDescription;
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cli.DownloadConfig;
+import com.facebook.buck.apple.toolchain.AppleCxxPlatformsProvider;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.config.DownloadConfig;
 import com.facebook.buck.cxx.CxxBinaryDescription;
-import com.facebook.buck.cxx.CxxBuckConfig;
 import com.facebook.buck.cxx.CxxGenruleDescription;
 import com.facebook.buck.cxx.CxxLibraryDescription;
-import com.facebook.buck.cxx.CxxPlatforms;
 import com.facebook.buck.cxx.CxxPrecompiledHeaderDescription;
 import com.facebook.buck.cxx.CxxTestDescription;
-import com.facebook.buck.cxx.DefaultCxxPlatforms;
-import com.facebook.buck.cxx.InferBuckConfig;
 import com.facebook.buck.cxx.PrebuiltCxxLibraryDescription;
 import com.facebook.buck.cxx.PrebuiltCxxLibraryGroupDescription;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformsProvider;
+import com.facebook.buck.cxx.toolchain.InferBuckConfig;
 import com.facebook.buck.d.DBinaryDescription;
 import com.facebook.buck.d.DBuckConfig;
 import com.facebook.buck.d.DLibraryDescription;
@@ -93,13 +92,16 @@ import com.facebook.buck.halide.HalideLibraryDescription;
 import com.facebook.buck.haskell.HaskellBinaryDescription;
 import com.facebook.buck.haskell.HaskellBuckConfig;
 import com.facebook.buck.haskell.HaskellGhciDescription;
+import com.facebook.buck.haskell.HaskellHaddockDescription;
 import com.facebook.buck.haskell.HaskellLibraryDescription;
+import com.facebook.buck.haskell.HaskellPlatform;
 import com.facebook.buck.haskell.HaskellPrebuiltLibraryDescription;
 import com.facebook.buck.io.ExecutableFinder;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.js.AndroidReactNativeLibraryDescription;
 import com.facebook.buck.js.IosReactNativeLibraryDescription;
 import com.facebook.buck.js.JsBundleDescription;
+import com.facebook.buck.js.JsBundleGenruleDescription;
 import com.facebook.buck.js.JsLibraryDescription;
 import com.facebook.buck.js.ReactNativeBuckConfig;
 import com.facebook.buck.jvm.groovy.GroovyBuckConfig;
@@ -125,8 +127,8 @@ import com.facebook.buck.log.Logger;
 import com.facebook.buck.lua.CxxLuaExtensionDescription;
 import com.facebook.buck.lua.LuaBinaryDescription;
 import com.facebook.buck.lua.LuaBuckConfig;
-import com.facebook.buck.lua.LuaConfig;
 import com.facebook.buck.lua.LuaLibraryDescription;
+import com.facebook.buck.lua.LuaPlatform;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.FlavorDomain;
 import com.facebook.buck.model.InternalFlavor;
@@ -154,13 +156,13 @@ import com.facebook.buck.shell.ShTestDescription;
 import com.facebook.buck.shell.WorkerToolDescription;
 import com.facebook.buck.swift.SwiftBuckConfig;
 import com.facebook.buck.swift.SwiftLibraryDescription;
-import com.facebook.buck.swift.SwiftPlatform;
+import com.facebook.buck.swift.toolchain.SwiftPlatformsProvider;
+import com.facebook.buck.toolchain.ToolchainProvider;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.ProcessExecutor;
 import com.facebook.buck.util.environment.Platform;
 import com.facebook.buck.versions.VersionedAliasDescription;
-import com.facebook.buck.zip.ZipFileDescription;
-import com.google.common.annotations.VisibleForTesting;
+import com.facebook.buck.zip.rules.ZipFileDescription;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -169,7 +171,6 @@ import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -228,84 +229,37 @@ public class KnownBuildRuleTypes {
     return new Builder();
   }
 
-  public static KnownBuildRuleTypes createInstance(
-      BuckConfig config,
-      ProjectFilesystem filesystem,
-      ProcessExecutor processExecutor,
-      AndroidDirectoryResolver androidDirectoryResolver,
-      SdkEnvironment sdkEnvironment)
-      throws InterruptedException, IOException {
-    return createBuilder(
-            config, filesystem, processExecutor, androidDirectoryResolver, sdkEnvironment)
-        .build();
-  }
-
-  @VisibleForTesting
   static KnownBuildRuleTypes createInstance(
       BuckConfig config,
       ProjectFilesystem filesystem,
       ProcessExecutor processExecutor,
-      AndroidDirectoryResolver androidDirectoryResolver)
-      throws InterruptedException, IOException {
-    KnownBuildRuleTypesFactory factory =
-        new KnownBuildRuleTypesFactory(processExecutor, androidDirectoryResolver);
-    SdkEnvironment sdkEnvironment = factory.createSdkEnvironment(config);
-    return createInstance(
-        config, filesystem, processExecutor, androidDirectoryResolver, sdkEnvironment);
-  }
-
-  static Builder createBuilder(
-      BuckConfig config,
-      ProjectFilesystem filesystem,
-      ProcessExecutor processExecutor,
-      AndroidDirectoryResolver androidDirectoryResolver,
+      ToolchainProvider toolchainProvider,
       SdkEnvironment sdkEnvironment)
       throws InterruptedException, IOException {
 
-    Platform platform = Platform.detect();
-
-    AndroidBuckConfig androidConfig = new AndroidBuckConfig(config, platform);
     SwiftBuckConfig swiftBuckConfig = new SwiftBuckConfig(config);
 
-    ImmutableList<AppleCxxPlatform> appleCxxPlatforms =
-        AppleCxxPlatforms.buildAppleCxxPlatforms(
-            sdkEnvironment.getAppleSdkPaths(),
-            sdkEnvironment.getAppleToolchains(),
-            filesystem,
+    AppleCxxPlatformsProvider appleCxxPlatformsProvider =
+        AppleCxxPlatformsProvider.create(
             config,
-            swiftBuckConfig);
-    checkApplePlaforms(appleCxxPlatforms);
-    FlavorDomain<AppleCxxPlatform> platformFlavorsToAppleCxxPlatforms =
-        FlavorDomain.from("Apple C++ Platform", appleCxxPlatforms);
+            filesystem,
+            sdkEnvironment.getAppleSdkPaths(),
+            sdkEnvironment.getAppleToolchains());
 
-    ImmutableMap.Builder<Flavor, SwiftPlatform> swiftPlatforms = ImmutableMap.builder();
-    for (Flavor flavor : platformFlavorsToAppleCxxPlatforms.getFlavors()) {
-      platformFlavorsToAppleCxxPlatforms
-          .getValue(flavor)
-          .getSwiftPlatform()
-          .ifPresent(swiftPlatform -> swiftPlatforms.put(flavor, swiftPlatform));
-    }
-    FlavorDomain<SwiftPlatform> platformFlavorsToSwiftPlatforms =
-        new FlavorDomain<>("Swift Platform", swiftPlatforms.build());
+    FlavorDomain<AppleCxxPlatform> platformFlavorsToAppleCxxPlatforms =
+        appleCxxPlatformsProvider.getAppleCxxPlatforms();
+
+    SwiftPlatformsProvider swiftPlatformsProvider =
+        SwiftPlatformsProvider.create(appleCxxPlatformsProvider);
 
     CxxBuckConfig cxxBuckConfig = new CxxBuckConfig(config);
 
     // Setup the NDK C/C++ platforms.
-    Optional<String> ndkVersion = androidConfig.getNdkVersion();
-    // If a NDK version isn't specified, we've got to reach into the runtime environment to find
-    // out which one we will end up using.
-    if (!ndkVersion.isPresent()) {
-      ndkVersion = androidDirectoryResolver.getNdkVersion();
-    }
+    NdkCxxPlatformsProvider ndkCxxPlatformsProvider =
+        NdkCxxPlatformsProviderFactory.create(config, filesystem, toolchainProvider);
 
-    ImmutableMap<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> ndkCxxPlatforms =
-        NdkCxxPlatforms.getPlatforms(
-            cxxBuckConfig,
-            androidConfig,
-            filesystem,
-            androidDirectoryResolver,
-            platform,
-            ndkVersion);
+    ImmutableMap<TargetCpuType, NdkCxxPlatform> ndkCxxPlatforms =
+        ndkCxxPlatformsProvider.getNdkCxxPlatforms();
 
     // Create a map of system platforms.
     ImmutableMap.Builder<Flavor, CxxPlatform> cxxSystemPlatformsBuilder = ImmutableMap.builder();
@@ -322,71 +276,14 @@ public class KnownBuildRuleTypes {
           appleCxxPlatform.getCxxPlatform().getFlavor(), appleCxxPlatform.getCxxPlatform());
     }
 
-    CxxPlatform defaultHostCxxPlatform = DefaultCxxPlatforms.build(platform, cxxBuckConfig);
-    cxxSystemPlatformsBuilder.put(defaultHostCxxPlatform.getFlavor(), defaultHostCxxPlatform);
-    ImmutableMap<Flavor, CxxPlatform> cxxSystemPlatformsMap = cxxSystemPlatformsBuilder.build();
-
-    // Add the host platform if needed (for example, when building on Linux).
-    Flavor hostFlavor = CxxPlatforms.getHostFlavor();
-    if (!cxxSystemPlatformsMap.containsKey(hostFlavor)) {
-      cxxSystemPlatformsBuilder.put(
-          hostFlavor,
-          CxxPlatform.builder().from(defaultHostCxxPlatform).setFlavor(hostFlavor).build());
-      cxxSystemPlatformsMap = cxxSystemPlatformsBuilder.build();
-    }
-
-    // Add platforms for each cxx flavor obtained from the buck config files
-    // from sections of the form cxx#{flavor name}.
-    // These platforms are overrides for existing system platforms.
-    ImmutableSet<Flavor> possibleHostFlavors = CxxPlatforms.getAllPossibleHostFlavors();
-    HashMap<Flavor, CxxPlatform> cxxOverridePlatformsMap =
-        new HashMap<Flavor, CxxPlatform>(cxxSystemPlatformsMap);
-    ImmutableSet<Flavor> cxxFlavors = CxxBuckConfig.getCxxFlavors(config);
-    for (Flavor flavor : cxxFlavors) {
-      CxxPlatform baseCxxPlatform = cxxSystemPlatformsMap.get(flavor);
-      if (baseCxxPlatform == null) {
-        if (possibleHostFlavors.contains(flavor)) {
-          // If a flavor is for an alternate host, it's safe to skip.
-          continue;
-        }
-        LOG.info("Applying \"%s\" overrides to default host platform", flavor);
-        baseCxxPlatform = defaultHostCxxPlatform;
-      }
-      cxxOverridePlatformsMap.put(
-          flavor,
-          CxxPlatforms.copyPlatformWithFlavorAndConfig(
-              baseCxxPlatform, platform, new CxxBuckConfig(config, flavor), flavor));
-    }
-
-    // Finalize our "default" host.
-    // TODO(kelliem) The host flavor should default to a concrete flavor
-    // like "linux-x86_64", not "default".
-    hostFlavor = DefaultCxxPlatforms.FLAVOR;
-    Optional<String> hostCxxPlatformOverride = cxxBuckConfig.getHostPlatform();
-    if (hostCxxPlatformOverride.isPresent()) {
-      Flavor overrideFlavor = InternalFlavor.of(hostCxxPlatformOverride.get());
-      if (cxxOverridePlatformsMap.containsKey(overrideFlavor)) {
-        hostFlavor = overrideFlavor;
-      }
-    }
-    CxxPlatform hostCxxPlatform =
-        CxxPlatform.builder()
-            .from(cxxOverridePlatformsMap.get(hostFlavor))
-            .setFlavor(DefaultCxxPlatforms.FLAVOR)
-            .build();
-    cxxOverridePlatformsMap.put(DefaultCxxPlatforms.FLAVOR, hostCxxPlatform);
-
-    ImmutableMap<Flavor, CxxPlatform> cxxPlatformsMap =
-        ImmutableMap.<Flavor, CxxPlatform>builder().putAll(cxxOverridePlatformsMap).build();
-
-    ExecutableFinder executableFinder = new ExecutableFinder();
+    CxxPlatformsProvider cxxPlatformsProvider =
+        CxxPlatformsProvider.create(config, cxxSystemPlatformsBuilder.build());
 
     // Build up the final list of C/C++ platforms.
-    FlavorDomain<CxxPlatform> cxxPlatforms = new FlavorDomain<>("C/C++ platform", cxxPlatformsMap);
+    FlavorDomain<CxxPlatform> cxxPlatforms = cxxPlatformsProvider.getCxxPlatforms();
 
     // Get the default target platform from config.
-    CxxPlatform defaultCxxPlatform =
-        CxxPlatforms.getConfigDefaultCxxPlatform(cxxBuckConfig, cxxPlatformsMap, hostCxxPlatform);
+    CxxPlatform defaultCxxPlatform = cxxPlatformsProvider.getDefaultCxxPlatform();
 
     DBuckConfig dBuckConfig = new DBuckConfig(config);
 
@@ -401,6 +298,8 @@ public class KnownBuildRuleTypes {
     ProGuardConfig proGuardConfig = new ProGuardConfig(config);
 
     DxConfig dxConfig = new DxConfig(config);
+
+    ExecutableFinder executableFinder = new ExecutableFinder();
 
     PythonBuckConfig pyConfig = new PythonBuckConfig(config, executableFinder);
     ImmutableList<PythonPlatform> pythonPlatformsList =
@@ -418,8 +317,7 @@ public class KnownBuildRuleTypes {
     Downloader downloader;
     DownloadConfig downloadConfig = new DownloadConfig(config);
     if (downloadConfig.isDownloadAtRuntimeOk()) {
-      downloader =
-          StackedDownloader.createFromConfig(config, androidDirectoryResolver.getSdkOrAbsent());
+      downloader = StackedDownloader.createFromConfig(config, toolchainProvider);
     } else {
       // Or just set one that blows up
       downloader = new ExplodingDownloader();
@@ -444,7 +342,11 @@ public class KnownBuildRuleTypes {
 
     InferBuckConfig inferBuckConfig = new InferBuckConfig(config);
 
-    LuaConfig luaConfig = new LuaBuckConfig(config, executableFinder);
+    LuaBuckConfig luaBuckConfig = new LuaBuckConfig(config, executableFinder);
+    FlavorDomain<LuaPlatform> luaPlatforms =
+        FlavorDomain.from(
+            LuaPlatform.FLAVOR_DOMAIN_NAME, luaBuckConfig.getPlatforms(cxxPlatforms.getValues()));
+    LuaPlatform defaultLuaPlatform = luaPlatforms.getValue(defaultCxxPlatform.getFlavor());
 
     CxxBinaryDescription cxxBinaryDescription =
         new CxxBinaryDescription(
@@ -456,7 +358,10 @@ public class KnownBuildRuleTypes {
 
     SwiftLibraryDescription swiftLibraryDescription =
         new SwiftLibraryDescription(
-            cxxBuckConfig, swiftBuckConfig, cxxPlatforms, platformFlavorsToSwiftPlatforms);
+            cxxBuckConfig,
+            swiftBuckConfig,
+            cxxPlatforms,
+            swiftPlatformsProvider.getSwiftCxxPlatforms());
     builder.register(swiftLibraryDescription);
 
     AppleConfig appleConfig = config.getView(AppleConfig.class);
@@ -477,7 +382,9 @@ public class KnownBuildRuleTypes {
             defaultCxxPlatform.getFlavor(),
             codeSignIdentityStore,
             provisioningProfileStore,
-            appleConfig);
+            appleConfig,
+            swiftBuckConfig,
+            swiftPlatformsProvider.getSwiftCxxPlatforms());
     builder.register(appleLibraryDescription);
     PrebuiltAppleFrameworkDescription appleFrameworkDescription =
         new PrebuiltAppleFrameworkDescription(platformFlavorsToAppleCxxPlatforms);
@@ -494,13 +401,17 @@ public class KnownBuildRuleTypes {
     builder.register(appleBinaryDescription);
 
     HaskellBuckConfig haskellBuckConfig = new HaskellBuckConfig(config, executableFinder);
-    builder.register(new HaskellLibraryDescription(haskellBuckConfig, cxxBuckConfig, cxxPlatforms));
-    builder.register(
-        new HaskellBinaryDescription(haskellBuckConfig, cxxPlatforms, defaultCxxPlatform));
+    FlavorDomain<HaskellPlatform> haskellPlatforms =
+        FlavorDomain.from(
+            "Haskell platform", haskellBuckConfig.getPlatforms(cxxPlatforms.getValues()));
+    HaskellPlatform defaultHaskellPlatform =
+        haskellPlatforms.getValue(defaultCxxPlatform.getFlavor());
+    builder.register(new HaskellHaddockDescription(defaultHaskellPlatform, haskellPlatforms));
+    builder.register(new HaskellLibraryDescription(haskellPlatforms, cxxBuckConfig));
+    builder.register(new HaskellBinaryDescription(defaultHaskellPlatform, haskellPlatforms));
     builder.register(new HaskellPrebuiltLibraryDescription());
     builder.register(
-        new HaskellGhciDescription(
-            haskellBuckConfig, cxxBuckConfig, cxxPlatforms, defaultCxxPlatform));
+        new HaskellGhciDescription(defaultHaskellPlatform, haskellPlatforms, cxxBuckConfig));
 
     if (javaConfig.getDxThreadCount().isPresent()) {
       LOG.warn("java.dx_threads has been deprecated. Use dx.max_threads instead");
@@ -587,13 +498,13 @@ public class KnownBuildRuleTypes {
             provisioningProfileStore,
             appleConfig.getAppleDeveloperDirectorySupplierForTests(processExecutor),
             defaultTestRuleTimeoutMs));
-    builder.register(new CommandAliasDescription());
+    builder.register(new CommandAliasDescription(Platform.detect()));
     builder.register(new CoreDataModelDescription());
     builder.register(new CsharpLibraryDescription());
     builder.register(cxxBinaryDescription);
     builder.register(cxxLibraryDescription);
     builder.register(new CxxGenruleDescription(cxxPlatforms));
-    builder.register(new CxxLuaExtensionDescription(luaConfig, cxxBuckConfig, cxxPlatforms));
+    builder.register(new CxxLuaExtensionDescription(luaPlatforms, cxxBuckConfig));
     builder.register(
         new CxxPythonExtensionDescription(pythonPlatforms, cxxBuckConfig, cxxPlatforms));
     builder.register(
@@ -626,7 +537,11 @@ public class KnownBuildRuleTypes {
     builder.register(new IosReactNativeLibraryDescription(reactNativeBuckConfig));
     builder.register(
         new JavaBinaryDescription(
-            defaultJavaOptions, defaultJavacOptions, defaultJavaCxxPlatform, javaConfig));
+            defaultJavaOptions,
+            defaultJavacOptions,
+            javaConfig,
+            defaultJavaCxxPlatform,
+            cxxPlatforms));
     builder.register(new JavaAnnotationProcessorDescription());
     builder.register(new JavaLibraryDescription(javaConfig, defaultJavacOptions));
     builder.register(
@@ -635,8 +550,10 @@ public class KnownBuildRuleTypes {
             defaultJavaOptionsForTests,
             defaultJavacOptions,
             defaultTestRuleTimeoutMs,
-            defaultJavaCxxPlatform));
+            defaultJavaCxxPlatform,
+            cxxPlatforms));
     builder.register(new JsBundleDescription());
+    builder.register(new JsBundleGenruleDescription());
     builder.register(new JsLibraryDescription());
     builder.register(new KeystoreDescription());
     builder.register(
@@ -649,10 +566,9 @@ public class KnownBuildRuleTypes {
             defaultJavacOptions,
             defaultTestRuleTimeoutMs));
     builder.register(
-        new LuaBinaryDescription(
-            luaConfig, cxxBuckConfig, defaultCxxPlatform, cxxPlatforms, pythonPlatforms));
+        new LuaBinaryDescription(defaultLuaPlatform, luaPlatforms, cxxBuckConfig, pythonPlatforms));
     builder.register(new LuaLibraryDescription());
-    builder.register(new NdkLibraryDescription(ndkVersion, ndkCxxPlatforms));
+    builder.register(new NdkLibraryDescription(toolchainProvider, ndkCxxPlatforms));
     OcamlBuckConfig ocamlBuckConfig = new OcamlBuckConfig(config, defaultCxxPlatform);
     builder.register(new OcamlBinaryDescription(ocamlBuckConfig));
     builder.register(new OcamlLibraryDescription(ocamlBuckConfig));
@@ -690,10 +606,15 @@ public class KnownBuildRuleTypes {
     builder.register(new RustLibraryDescription(rustBuckConfig, cxxPlatforms, defaultCxxPlatform));
     builder.register(new RustTestDescription(rustBuckConfig, cxxPlatforms, defaultCxxPlatform));
     builder.register(new PrebuiltRustLibraryDescription());
-    builder.register(new ScalaLibraryDescription(scalaConfig));
+    builder.register(new ScalaLibraryDescription(scalaConfig, javaConfig, defaultJavacOptions));
     builder.register(
         new ScalaTestDescription(
-            scalaConfig, defaultJavaOptionsForTests, defaultTestRuleTimeoutMs, defaultCxxPlatform));
+            scalaConfig,
+            javaConfig,
+            defaultJavacOptions,
+            defaultJavaOptionsForTests,
+            defaultTestRuleTimeoutMs,
+            defaultCxxPlatform));
     builder.register(new SceneKitAssetsDescription());
     builder.register(new ShBinaryDescription());
     builder.register(new ShTestDescription(defaultTestRuleTimeoutMs));
@@ -708,26 +629,7 @@ public class KnownBuildRuleTypes {
 
     builder.register(VersionedAliasDescription.of());
 
-    return builder;
-  }
-
-  private static void checkApplePlaforms(ImmutableList<AppleCxxPlatform> appleCxxPlatforms) {
-    Map<Flavor, AppleCxxPlatform> platformsMap = new HashMap<>();
-    for (AppleCxxPlatform platform : appleCxxPlatforms) {
-      Flavor flavor = platform.getFlavor();
-      if (platformsMap.containsKey(flavor)) {
-        AppleCxxPlatform otherPlatform = platformsMap.get(flavor);
-        throw new HumanReadableException(
-            "There are two conflicting SDKs providing the same platform \"%s\":\n"
-                + "- %s\n"
-                + "- %s\n\n"
-                + "Please try to remove one of them.",
-            flavor.getName(),
-            platform.getAppleSdkPaths().getSdkPath(),
-            otherPlatform.getAppleSdkPaths().getSdkPath());
-      }
-      platformsMap.put(flavor, platform);
-    }
+    return builder.build();
   }
 
   public static class Builder {
@@ -736,7 +638,6 @@ public class KnownBuildRuleTypes {
 
     @Nullable private FlavorDomain<CxxPlatform> cxxPlatforms;
     @Nullable private CxxPlatform defaultCxxPlatform;
-    @Nullable private ProcessExecutor processExecutor;
 
     protected Builder() {
       this.descriptions = Maps.newConcurrentMap();

@@ -16,10 +16,10 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.NativeLinkTarget;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkables;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkTarget;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkables;
 import com.facebook.buck.graph.AbstractBreadthFirstTraversal;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.util.immutables.BuckStyleTuple;
@@ -102,7 +102,7 @@ abstract class AbstractOmnibusRoots {
       new AbstractBreadthFirstTraversal<NativeLinkable>(includedRootDeps.values()) {
         @Override
         public Iterable<NativeLinkable> visit(NativeLinkable linkable) throws RuntimeException {
-          if (linkable.getPreferredLinkage(cxxPlatform) == NativeLinkable.Linkage.SHARED) {
+          if (!linkable.supportsOmnibusLinking(cxxPlatform)) {
             excluded.put(linkable.getBuildTarget(), linkable);
             return ImmutableSet.of();
           }

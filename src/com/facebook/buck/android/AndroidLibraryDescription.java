@@ -16,7 +16,7 @@
 
 package com.facebook.buck.android;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.HasJavaAbi;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibrary;
@@ -27,7 +27,6 @@ import com.facebook.buck.jvm.java.JavacOptionsFactory;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.Flavored;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -87,8 +86,7 @@ public class AndroidLibraryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AndroidLibraryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AndroidLibraryDescriptionArg args) {
     if (buildTarget.getFlavors().contains(JavaLibrary.SRC_JAR)) {
       return new JavaSourceJar(
           buildTarget, projectFilesystem, params, args.getSrcs(), args.getMavenCoords());
@@ -97,36 +95,33 @@ public class AndroidLibraryDescription
     boolean hasDummyRDotJavaFlavor = buildTarget.getFlavors().contains(DUMMY_R_DOT_JAVA_FLAVOR);
     JavacOptions javacOptions =
         JavacOptionsFactory.create(defaultOptions, buildTarget, projectFilesystem, resolver, args);
-    AndroidLibrary.Builder defaultJavaLibraryBuilder =
-        (AndroidLibrary.Builder)
-            AndroidLibrary.builder(
-                    targetGraph,
-                    buildTarget,
-                    projectFilesystem,
-                    params,
-                    resolver,
-                    cellRoots,
-                    javaBuckConfig,
-                    javacOptions,
-                    args,
-                    compilerFactory)
-                .setArgs(args)
-                .setJavacOptions(javacOptions)
-                .setTests(args.getTests());
+    AndroidLibrary.Builder androidLibraryBuilder =
+        AndroidLibrary.builder(
+            buildTarget,
+            projectFilesystem,
+            params,
+            resolver,
+            javaBuckConfig,
+            javacOptions,
+            args,
+            compilerFactory.getCompiler(args.getLanguage().orElse(JvmLanguage.JAVA)));
 
     if (hasDummyRDotJavaFlavor) {
-      return defaultJavaLibraryBuilder.buildDummyRDotJava();
+      return androidLibraryBuilder.buildDummyRDotJava();
     } else if (HasJavaAbi.isAbiTarget(buildTarget)) {
-      return defaultJavaLibraryBuilder.buildAbi();
+      return androidLibraryBuilder.buildAbi();
     }
-    return defaultJavaLibraryBuilder.build();
+    return androidLibraryBuilder.build();
   }
 
   @Override
   public boolean hasFlavors(ImmutableSet<Flavor> flavors) {
     return flavors.isEmpty()
         || flavors.equals(ImmutableSet.of(JavaLibrary.SRC_JAR))
-        || flavors.equals(ImmutableSet.of(DUMMY_R_DOT_JAVA_FLAVOR));
+        || flavors.equals(ImmutableSet.of(DUMMY_R_DOT_JAVA_FLAVOR))
+        || flavors.equals(ImmutableSet.of(HasJavaAbi.CLASS_ABI_FLAVOR))
+        || flavors.equals(ImmutableSet.of(HasJavaAbi.SOURCE_ABI_FLAVOR))
+        || flavors.equals(ImmutableSet.of(HasJavaAbi.VERIFIED_SOURCE_ABI_FLAVOR));
   }
 
   @Override
@@ -138,19 +133,19 @@ public class AndroidLibraryDescription
       ImmutableCollection.Builder<BuildTarget> targetGraphOnlyDepsBuilder) {
     compilerFactory
         .getCompiler(constructorArg.getLanguage().orElse(JvmLanguage.JAVA))
-        .findDepsForTargetFromConstructorArgs(
-            buildTarget, cellRoots, constructorArg, extraDepsBuilder, targetGraphOnlyDepsBuilder);
+        .addTargetDeps(extraDepsBuilder, targetGraphOnlyDepsBuilder);
   }
 
   public interface CoreArg
-      extends JavaLibraryDescription.CoreArg, HasDepsQuery, HasProvidedDepsQuery {
+      extends JavaLibraryDescription.CoreArg,
+          AndroidKotlinCoreArg,
+          HasDepsQuery,
+          HasProvidedDepsQuery {
     Optional<SourcePath> getManifest();
 
     Optional<String> getResourceUnionPackage();
 
     Optional<String> getFinalRName();
-
-    Optional<JvmLanguage> getLanguage();
   }
 
   @BuckStyleImmutable

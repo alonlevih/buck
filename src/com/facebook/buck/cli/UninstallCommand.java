@@ -20,11 +20,11 @@ import com.facebook.buck.android.AdbHelper;
 import com.facebook.buck.android.HasInstallableApk;
 import com.facebook.buck.android.exopackage.AndroidDevicesHelper;
 import com.facebook.buck.android.exopackage.AndroidDevicesHelperFactory;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.ConsoleEvent;
-import com.facebook.buck.json.BuildFileParseException;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetException;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
+import com.facebook.buck.parser.exceptions.BuildFileParseException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
@@ -34,11 +34,9 @@ import com.facebook.buck.rules.TargetGraphAndBuildTargets;
 import com.facebook.buck.step.AdbOptions;
 import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.TargetDeviceOptions;
-import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.MoreExceptions;
 import com.facebook.infer.annotation.SuppressFieldNotInitialized;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import java.io.IOException;
@@ -105,19 +103,14 @@ public class UninstallCommand extends AbstractCommand {
                   params.getBuckEventBus(),
                   params.getCell(),
                   getEnableParserProfiling(),
-                  pool.getExecutor(),
+                  pool.getListeningExecutorService(),
                   parseArgumentsAsTargetNodeSpecs(params.getBuckConfig(), getArguments()));
       buildTargets = result.getBuildTargets();
       resolver =
-          Preconditions.checkNotNull(
-                  params
-                      .getActionGraphCache()
-                      .getActionGraph(
-                          params.getBuckEventBus(),
-                          params.getBuckConfig().isActionGraphCheckingEnabled(),
-                          params.getBuckConfig().isSkipActionGraphCache(),
-                          result.getTargetGraph(),
-                          params.getBuckConfig().getKeySeed()))
+          params
+              .getActionGraphCache()
+              .getActionGraph(
+                  params.getBuckEventBus(), result.getTargetGraph(), params.getBuckConfig())
               .getResolver();
     } catch (BuildTargetException | BuildFileParseException e) {
       params
@@ -136,12 +129,7 @@ public class UninstallCommand extends AbstractCommand {
     BuildTarget buildTarget = Iterables.get(buildTargets, 0);
 
     // Find the android_binary() rule from the parse.
-    BuildRule buildRule;
-    try {
-      buildRule = resolver.requireRule(buildTarget);
-    } catch (NoSuchBuildTargetException e) {
-      throw new HumanReadableException(e.getHumanReadableErrorMessage());
-    }
+    BuildRule buildRule = resolver.requireRule(buildTarget);
     if (!(buildRule instanceof HasInstallableApk)) {
       params
           .getBuckEventBus()

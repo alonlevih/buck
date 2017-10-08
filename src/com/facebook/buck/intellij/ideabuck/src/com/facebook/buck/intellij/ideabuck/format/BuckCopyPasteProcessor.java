@@ -23,13 +23,14 @@ import com.facebook.buck.intellij.ideabuck.lang.psi.BuckTypes;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.intellij.codeInsight.editorActions.CopyPastePreProcessor;
+import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.editor.SelectionModel;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiDirectory;
@@ -38,9 +39,11 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiPackage;
 import com.intellij.psi.TokenType;
+import com.intellij.psi.impl.source.tree.TreeElement;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.PsiShortNamesCache;
+import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiUtilCore;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -50,9 +53,9 @@ import org.jetbrains.annotations.Nullable;
 public class BuckCopyPasteProcessor implements CopyPastePreProcessor {
 
   private static final Pattern UNSOLVED_DEPENDENCY_PATTERN =
-      Pattern.compile("^(package|import)\\s*([\\w\\.]*);?\\s*$");
+      Pattern.compile("^(package|import)?\\s*([\\w\\./]*);?\\s*$");
   private static final Pattern SOLVED_DEPENDENCY_PATTERN =
-      Pattern.compile("^\\s*[\\w/]*:[\\w]+\\s*$");
+      Pattern.compile("^\\s*[\\w/-]*:[\\w-]+\\s*$");
 
   @Nullable
   @Override
@@ -77,14 +80,34 @@ public class BuckCopyPasteProcessor implements CopyPastePreProcessor {
       return text;
     }
 
-    if (BuckPsiUtils.hasElementType(
-        element.getNode(),
-        TokenType.WHITE_SPACE,
-        BuckTypes.SINGLE_QUOTED_STRING,
-        BuckTypes.DOUBLE_QUOTED_STRING)) {
+    ASTNode elementNode = element.getNode();
+    // A simple test of the element type
+    boolean isQuotedString =
+        BuckPsiUtils.hasElementType(
+            elementNode, BuckTypes.SINGLE_QUOTED_STRING, BuckTypes.DOUBLE_QUOTED_STRING);
+    // isQuotedString will be true if the caret is under the left quote, the right quote,
+    // or anywhere in between. But pasting with caret under the left quote acts differently than
+    // pasting in other isQuotedString positions: Text will be inserted before the quotes, not
+    // inside them
+    boolean inQuotedString = false;
+    if (isQuotedString) {
+      inQuotedString =
+          element instanceof TreeElement
+              && ((TreeElement) element).getStartOffset() < selectionStart;
+    }
+    if (isQuotedString || BuckPsiUtils.hasElementType(elementNode, TokenType.WHITE_SPACE)) {
+      if (inQuotedString) {
+        // We want to impose the additional requirement that the string is currently empty. That is,
+        // if you are pasting into an existing target, we don't want to process the paste text.
+        String elementText = elementNode.getText().trim();
+        if (!(elementText.equals("''") || elementText.equals("\"\""))) {
+          return text;
+        }
+      }
+
       PsiElement property = BuckPsiUtils.findAncestorWithType(element, BuckTypes.PROPERTY);
       if (checkPropertyName(property)) {
-        return formatPasteText(text, element, project);
+        return formatPasteText(text, element, project, inQuotedString);
       }
     }
     return text;
@@ -109,38 +132,75 @@ public class BuckCopyPasteProcessor implements CopyPastePreProcessor {
   }
 
   /**
-   * Automatically convert to buck dependency pattern Example 1: "import
-   * com.example.activity.MyFirstActivity" -> "//java/com/example/activity:activity"
+   * Converts raw paste text to a format suitable for insertion in a buck dependency list (e.g.,
+   * {@code deps} or {@code visibility} at the point of the given element. The paste text may span
+   * multiple lines. If every non-blank line can be resolved into a dependency, the expanded text is
+   * returned, but if any non-blank line in unresolvable, the original paste text is returned.
    *
-   * <p>Example 2: "package com.example.activity;" -> "//java/com/example/activity:activity"
+   * <p>This method detects the location in the parse tree from the given element and will
+   * quote-wrap dependencies accordingly.
    *
-   * <p>Example 3: "com.example.activity.MyFirstActivity" -> "//java/com/example/activity:activity"
+   * <p>Example resolutions (note that these are the unwrapped results; wrapped results are
+   * double-quoted with a trailing comma):
    *
-   * <p>Example 4: "/Users/tim/tb/java/com/example/activity/BUCK" ->
-   * "//java/com/example/activity:activity"
+   * <p>Java imports: {@code "import com.example.activity.MyFirstActivity" ->
+   * "//java/com/example/activity:activity" }
    *
-   * <p>Example 5 //apps/myapp:app -> "//apps/myapp:app",
+   * <p>Java packages: {@code "package com.example.activity;" ->
+   * "//java/com/example/activity:activity" }
+   *
+   * <p>Fully qualified Java classnames: {@code "com.example.activity.MyFirstActivity" ->
+   * "//java/com/example/activity:activity" }
+   *
+   * <p>Unqualified Java classnames: {@code "MyFirstActivity" ->
+   * "//java/com/example/activity:activity" } (when there is a unique match for the classname)
+   *
+   * <p>BUCK paths: {@code "//java/com/example/activity/BUCK" ->
+   * "//java/com/example/activity:activity" }
+   *
+   * <p>BUCK targets: {@code "//java/com/example/activity:activity" ->
+   * "//java/com/example/activity:activity" }
+   *
+   * <p>Multiline pastes: {@code "import com.foo.Foo;\nimport com.bar.Bar;" ->
+   * "//java/com/foo:foo\n//java/com/bar:bar"}
    */
-  private String formatPasteText(String text, PsiElement element, Project project) {
+  private String formatPasteText(
+      String text, PsiElement element, Project project, boolean inQuotedString) {
     Iterable<String> paths = Splitter.on('\n').trimResults().omitEmptyStrings().split(text);
     List<String> results = new ArrayList<>();
     for (String path : paths) {
+      String resolution = null;
+
       Matcher matcher = UNSOLVED_DEPENDENCY_PATTERN.matcher(path);
       if (matcher.matches()) {
-        results.add(resolveUnsolvedBuckDependency(element, project, matcher.group(2)));
+        resolution = resolveUnsolvedBuckDependency(project, matcher.group(2));
       } else if (SOLVED_DEPENDENCY_PATTERN.matcher(path).matches()) {
-        results.add(buildSolvedBuckDependency(path));
-      } else {
+        resolution = buildSolvedBuckDependency(path);
+      } // else we don't know how to format this
+
+      if (resolution == null) {
         // Any non-target results in no formatting
         return text;
       }
+
+      // We have text to paste - figure out if we should wrap it in "\"%s\","
+      IElementType elementType = element.getNode().getElementType();
+
+      // Is the cursor in whitespace?
+      boolean whitespace = elementType == TokenType.WHITE_SPACE;
+
+      // If the cursor is in whitespace, or under a left quote, then we should wrap the paste text
+      if (whitespace || !inQuotedString) {
+        resolution = "\"" + resolution + "\",";
+      }
+
+      results.add(resolution);
     }
     return Joiner.on('\n').skipNulls().join(results);
   }
 
   private String buildSolvedBuckDependency(String path) {
     StringBuilder stringBuilder = new StringBuilder();
-    stringBuilder.append('"');
     if (!(path.startsWith("//") || path.startsWith(":"))) {
       if (path.startsWith("/")) {
         stringBuilder.append('/');
@@ -148,11 +208,11 @@ public class BuckCopyPasteProcessor implements CopyPastePreProcessor {
         stringBuilder.append("//");
       }
     }
-    return stringBuilder.append(path).append("\",").toString();
+    return stringBuilder.append(path).toString();
   }
 
-  private String resolveUnsolvedBuckDependency(PsiElement element, Project project, String path) {
-    String original = path;
+  @Nullable
+  private String resolveUnsolvedBuckDependency(Project project, String path) {
     VirtualFile buckFile = referenceNameToBuckFile(project, path);
     if (buckFile != null) {
       path = buckFile.getPath().replaceFirst(project.getBasePath(), "");
@@ -166,32 +226,48 @@ public class BuckCopyPasteProcessor implements CopyPastePreProcessor {
         String lastWord = path.substring(path.lastIndexOf("/") + 1, path.length());
         path += ":" + lastWord;
       }
-      if (element.getNode().getElementType() == TokenType.WHITE_SPACE) {
-        path = "\"" + path + "\",";
-      }
+
       return path;
     } else {
-      return original;
+      return null;
     }
   }
 
   private VirtualFile referenceNameToBuckFile(Project project, String reference) {
     // First test if it is a absolute path of a file.
-    File tryFile = new File(reference);
-    if (tryFile != null) {
-      VirtualFile file = VfsUtil.findFileByIoFile(tryFile, true);
+    {
+      VirtualFileManager virtualFileManager = VirtualFileManager.getInstance();
+      VirtualFile file = virtualFileManager.findFileByUrl("file://" + reference);
+      if (file == null) {
+        // We might be in an integration test ...
+        file = virtualFileManager.findFileByUrl("temp://" + reference);
+      }
       if (file != null) {
         return BuckBuildUtil.getBuckFileFromDirectory(file.getParent());
       }
     }
 
     // Try class firstly.
-    PsiClass classElement =
-        JavaPsiFacade.getInstance(project)
-            .findClass(reference, GlobalSearchScope.allScope(project));
-    if (classElement != null) {
-      VirtualFile file = PsiUtilCore.getVirtualFile(classElement);
-      return BuckBuildUtil.getBuckFileFromDirectory(file.getParent());
+    {
+      PsiClass foundClass = null;
+      GlobalSearchScope projectScope = GlobalSearchScope.allScope(project);
+      if (reference.indexOf('.') >= 0) {
+        // A fully qualified name
+        foundClass = JavaPsiFacade.getInstance(project).findClass(reference, projectScope);
+      } else {
+        // A short name
+        final PsiClass[] classes =
+            PsiShortNamesCache.getInstance(project).getClassesByName(reference, projectScope);
+        if (classes != null && classes.length == 1) {
+          foundClass = classes[0];
+        }
+        // TODO(shemitz) Can we show a chooser if we have multiple candidates?
+        // That might be confusing with multi-line pastes
+      }
+      if (foundClass != null) {
+        VirtualFile file = PsiUtilCore.getVirtualFile(foundClass);
+        return BuckBuildUtil.getBuckFileFromDirectory(file.getParent());
+      }
     }
 
     // Then try package.

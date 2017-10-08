@@ -18,7 +18,7 @@ package com.facebook.buck.shell;
 
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRule;
@@ -27,6 +27,7 @@ import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.RuleKey;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -35,10 +36,10 @@ import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.rules.args.Arg;
 import com.facebook.buck.rules.keys.DefaultRuleKeyFactory;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
-import com.facebook.buck.util.cache.DefaultFileHashCache;
 import com.facebook.buck.util.cache.FileHashCache;
 import com.facebook.buck.util.cache.FileHashCacheMode;
-import com.facebook.buck.util.cache.StackedFileHashCache;
+import com.facebook.buck.util.cache.impl.DefaultFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
@@ -52,7 +53,8 @@ public class ShTestDescriptionTest {
   @Test
   public void argsWithLocationMacro() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(resolver));
     BuildRule dep =
@@ -61,7 +63,7 @@ public class ShTestDescriptionTest {
             .build(resolver);
     ShTestBuilder shTestBuilder =
         new ShTestBuilder(BuildTargetFactory.newInstance("//:rule"))
-            .setTest(new FakeSourcePath("test.sh"))
+            .setTest(FakeSourcePath.of("test.sh"))
             .setArgs(ImmutableList.of("$(location //:dep)"));
     assertThat(shTestBuilder.findImplicitDeps(), Matchers.hasItem(dep.getBuildTarget()));
     ShTest shTest = shTestBuilder.build(resolver);
@@ -74,7 +76,8 @@ public class ShTestDescriptionTest {
   @Test
   public void envWithLocationMacro() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(resolver));
     BuildRule dep =
@@ -83,7 +86,7 @@ public class ShTestDescriptionTest {
             .build(resolver);
     ShTestBuilder shTestBuilder =
         new ShTestBuilder(BuildTargetFactory.newInstance("//:rule"))
-            .setTest(new FakeSourcePath("test.sh"))
+            .setTest(FakeSourcePath.of("test.sh"))
             .setEnv(ImmutableMap.of("LOC", "$(location //:dep)"));
     assertThat(shTestBuilder.findImplicitDeps(), Matchers.hasItem(dep.getBuildTarget()));
     ShTest shTest = shTestBuilder.build(resolver);
@@ -102,19 +105,21 @@ public class ShTestDescriptionTest {
     Path resource = filesystem.getPath("resource");
     filesystem.touch(resource);
 
-    SourcePath test = new FakeSourcePath(filesystem, "some_test");
+    SourcePath test = FakeSourcePath.of(filesystem, "some_test");
     filesystem.touch(Paths.get("some_test"));
 
     // Create a test rule without resources attached.
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     ShTest shTestWithoutResources =
         new ShTestBuilder(target).setTest(test).build(resolver, filesystem);
     RuleKey ruleKeyWithoutResource = getRuleKey(shTestWithoutResources);
 
     // Create a rule with a resource attached.
     resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     ShTest shTestWithResources =
         new ShTestBuilder(target)
             .setTest(test)
@@ -134,7 +139,7 @@ public class ShTestDescriptionTest {
     filesystem.touch(resource);
     TargetNode<?, ?> shTestWithResources =
         new ShTestBuilder(target)
-            .setTest(new FakeSourcePath(filesystem, "some_test"))
+            .setTest(FakeSourcePath.of(filesystem, "some_test"))
             .setResources(ImmutableSortedSet.of(resource))
             .build();
     assertThat(shTestWithResources.getInputs(), Matchers.hasItem(resource));
@@ -142,7 +147,8 @@ public class ShTestDescriptionTest {
 
   private RuleKey getRuleKey(BuildRule rule) {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FileHashCache fileHashCache =

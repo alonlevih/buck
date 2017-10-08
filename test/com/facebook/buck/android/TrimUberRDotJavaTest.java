@@ -16,7 +16,8 @@
 
 package com.facebook.buck.android;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.jvm.java.FakeJavaLibrary;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
@@ -29,7 +30,8 @@ import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeOnDiskBuildInfo;
-import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -86,9 +88,11 @@ public class TrimUberRDotJavaTest {
       Optional<String> keepResourceClassPattern,
       String rDotJavaContentsAfterFiltering)
       throws InterruptedException, IOException {
-    ProjectFilesystem filesystem = new ProjectFilesystem(tmpFolder.getRoot());
+    ProjectFilesystem filesystem =
+        TestProjectFilesystems.createProjectFilesystem(tmpFolder.getRoot());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
 
@@ -120,7 +124,7 @@ public class TrimUberRDotJavaTest {
             new FakeJavaLibrary(BuildTargetFactory.newInstance("//:lib"), null));
     dexProducedFromJavaLibrary
         .getBuildOutputInitializer()
-        .setBuildOutput(
+        .setBuildOutputForTests(
             dexProducedFromJavaLibrary.initializeFromDisk(
                 new FakeOnDiskBuildInfo()
                     .putMetadata(DexProducedFromJavaLibrary.WEIGHT_ESTIMATE, "1")
@@ -136,7 +140,7 @@ public class TrimUberRDotJavaTest {
             trimTarget,
             filesystem,
             TestBuildRuleParams.create(),
-            Optional.of(new PathSourcePath(filesystem, rDotJavaDir)),
+            Optional.of(FakeSourcePath.of(filesystem, rDotJavaDir)),
             ImmutableList.of(dexProducedFromJavaLibrary),
             keepResourcePattern,
             keepResourceClassPattern);

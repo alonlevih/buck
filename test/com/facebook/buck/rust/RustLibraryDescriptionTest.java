@@ -23,6 +23,7 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultBuildTargetSourcePath;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.testutil.TargetGraphFactory;
 import com.google.common.collect.ImmutableSortedSet;
@@ -37,16 +38,17 @@ public class RustLibraryDescriptionTest {
     RustLibraryBuilder libraryBuilder =
         RustLibraryBuilder.from("//:lib")
             .setSrcs(
-                ImmutableSortedSet.of(new DefaultBuildTargetSourcePath(srcBuilder.getTarget())));
+                ImmutableSortedSet.of(DefaultBuildTargetSourcePath.of(srcBuilder.getTarget())));
     RustBinaryBuilder binaryBuilder =
         RustBinaryBuilder.from("//:bin")
-            .setSrcs(ImmutableSortedSet.of(new FakeSourcePath("main.rs")))
+            .setSrcs(ImmutableSortedSet.of(FakeSourcePath.of("main.rs")))
             .setDeps(ImmutableSortedSet.of(libraryBuilder.getTarget()));
     TargetGraph targetGraph =
         TargetGraphFactory.newInstance(
             srcBuilder.build(), libraryBuilder.build(), binaryBuilder.build());
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     ruleResolver.requireRule(binaryBuilder.getTarget());
   }
 }

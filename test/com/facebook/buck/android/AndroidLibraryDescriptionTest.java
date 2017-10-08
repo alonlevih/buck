@@ -23,6 +23,7 @@ import static org.easymock.EasyMock.verify;
 import static org.hamcrest.junit.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 
+import com.facebook.buck.jvm.java.ExtraClasspathFromContextFunction;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
@@ -37,6 +38,7 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeBuildRule;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.rules.query.Query;
@@ -91,7 +93,8 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
             transitiveExportedNode, exportedNode, exportingNode, androidLibNode);
 
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule androidLibRule = resolver.requireRule(androidLibNode.getBuildTarget());
     BuildRule exportedRule = resolver.requireRule(exportedNode.getBuildTarget());
@@ -136,7 +139,8 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(bottomNode, libNode, sublibNode, rule);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     FakeBuildRule bottomRule = resolver.addToIndex(new FakeBuildRule(bottomNode.getBuildTarget()));
     FakeBuildRule sublibRule =
@@ -182,7 +186,8 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
             transitiveExportedNode, exportedNode, exportingNode, androidLibNode);
 
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule androidLibRule = resolver.requireRule(androidLibNode.getBuildTarget());
     BuildRule exportedRule = resolver.requireRule(exportedNode.getBuildTarget());
@@ -202,7 +207,7 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
   }
 
   @Test
-  public void bootClasspathAppenderAddsLibsFromAndroidPlatformTarget() {
+  public void androidClasspathFromContextFunctionAddsLibsFromAndroidPlatformTarget() {
     AndroidPlatformTarget androidPlatformTarget = createMock(AndroidPlatformTarget.class);
     List<Path> entries =
         ImmutableList.of(
@@ -213,13 +218,14 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
 
     replay(androidPlatformTarget);
 
-    BootClasspathAppender appender = new BootClasspathAppender();
+    ExtraClasspathFromContextFunction extraClasspathFromContextFunction =
+        AndroidClasspathFromContextFunction.INSTANCE;
 
     JavacOptions options =
         JavacOptions.builder().setSourceLevel("1.7").setTargetLevel("1.7").build();
     JavacOptions updated =
-        appender.amend(
-            options,
+        options.withBootclasspathFromContext(
+            extraClasspathFromContextFunction,
             FakeBuildContext.NOOP_CONTEXT.withAndroidPlatformTargetSupplier(
                 Suppliers.ofInstance(androidPlatformTarget)));
 
@@ -244,7 +250,8 @@ public class AndroidLibraryDescriptionTest extends AbiCompilationModeTest {
     TargetGraph targetGraph = TargetGraphFactory.newInstance(resourceRule);
 
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     resolver.addToIndex(new FakeBuildRule(resourceRule.getBuildTarget()));
 

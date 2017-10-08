@@ -26,7 +26,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 
 import com.facebook.buck.dalvik.EstimateDexWeightStep;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.DefaultJavaLibrary;
 import com.facebook.buck.jvm.java.FakeJavaLibrary;
 import com.facebook.buck.jvm.java.JavaLibrary;
@@ -45,6 +45,7 @@ import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeOnDiskBuildInfo;
 import com.facebook.buck.rules.InitializableFromDisk;
 import com.facebook.buck.rules.OnDiskBuildInfo;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -78,7 +79,8 @@ public class DexProducedFromJavaLibraryThatContainsClassFilesTest {
     ProjectFilesystem filesystem = FakeProjectFilesystem.createJavaOnlyFilesystem();
 
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(resolver));
     FakeJavaLibrary javaLibraryRule =
@@ -165,11 +167,12 @@ public class DexProducedFromJavaLibraryThatContainsClassFilesTest {
   @Test
   public void testGetBuildStepsWhenThereAreNoClassesToDex() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     DefaultJavaLibrary javaLibrary = JavaLibraryBuilder.createBuilder("//foo:bar").build(resolver);
     javaLibrary
         .getBuildOutputInitializer()
-        .setBuildOutput(new JavaLibrary.Data(ImmutableSortedMap.of()));
+        .setBuildOutputForTests(new JavaLibrary.Data(ImmutableSortedMap.of()));
 
     BuildContext context = FakeBuildContext.NOOP_CONTEXT;
     FakeBuildableContext buildableContext = new FakeBuildableContext();
@@ -203,12 +206,13 @@ public class DexProducedFromJavaLibraryThatContainsClassFilesTest {
   @Test
   public void testObserverMethods() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     DefaultJavaLibrary accumulateClassNames =
         JavaLibraryBuilder.createBuilder("//foo:bar").build(resolver);
     accumulateClassNames
         .getBuildOutputInitializer()
-        .setBuildOutput(
+        .setBuildOutputForTests(
             new JavaLibrary.Data(
                 ImmutableSortedMap.of("com/example/Foo", HashCode.fromString("cafebabe"))));
 
@@ -229,14 +233,15 @@ public class DexProducedFromJavaLibraryThatContainsClassFilesTest {
       throws IOException {
     BuildOutputInitializer<T> buildOutputInitializer =
         initializableFromDisk.getBuildOutputInitializer();
-    buildOutputInitializer.setBuildOutput(
+    buildOutputInitializer.setBuildOutputForTests(
         initializableFromDisk.initializeFromDisk(onDiskBuildInfo));
   }
 
   @Test
   public void getOutputDoesNotAccessWrappedJavaLibrary() throws Exception {
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
 
     JavaLibrary javaLibrary =
         JavaLibraryBuilder.createBuilder(BuildTargetFactory.newInstance("//:lib"))

@@ -21,9 +21,11 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.facebook.buck.jvm.java.abi.source.FrontendOnlyJavacTask;
+import com.facebook.buck.jvm.java.abi.source.api.ErrorSuppressingDiagnosticListener;
 import com.facebook.buck.jvm.java.plugin.adapter.BuckJavacPlugin;
 import com.facebook.buck.jvm.java.plugin.adapter.BuckJavacTask;
-import com.facebook.buck.zip.DeterministicManifest;
+import com.facebook.buck.jvm.java.plugin.adapter.TreesMessager;
+import com.facebook.buck.util.zip.DeterministicManifest;
 import com.google.common.base.Joiner;
 import com.google.common.io.ByteStreams;
 import com.sun.source.tree.CompilationUnitTree;
@@ -46,6 +48,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import javax.annotation.processing.Messager;
 import javax.annotation.processing.Processor;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -96,6 +99,10 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
       throw new AssertionError("Can't add contents after creating the task");
     }
 
+    getClasspathCompiler().addSourceFileContents(fileName, lines);
+  }
+
+  private TestCompiler getClasspathCompiler() {
     if (classpathCompiler == null) {
       classpathCompiler = new TestCompiler();
       try {
@@ -103,9 +110,18 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
       } catch (Throwable throwable) {
         throw new AssertionError(throwable);
       }
+      classpath.add(classpathCompiler.getOutputDir());
     }
-    classpathCompiler.addSourceFileContents(fileName, lines);
-    classpath.add(classpathCompiler.getOutputDir());
+
+    return classpathCompiler;
+  }
+
+  public void addClasspathSourceFile(Path file) throws IOException {
+    if (javacTask != null) {
+      throw new AssertionError("Can't add contents after creating the task");
+    }
+
+    getClasspathCompiler().addSourceFile(file);
   }
 
   public void addClasspath(Collection<Path> paths) {
@@ -175,7 +191,13 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
   }
 
   public Iterable<? extends CompilationUnitTree> parse() throws IOException {
-    return getJavacTask().parse();
+    Iterable<? extends CompilationUnitTree> result = getJavacTask().parse();
+    if (!allowCompilationErrors && !diagnosticCollector.getDiagnosticMessages().isEmpty()) {
+      fail(
+          "Compilation failed! Diagnostics:\n"
+              + getDiagnosticMessages().stream().collect(Collectors.joining("\n")));
+    }
+    return result;
   }
 
   public Iterable<? extends TypeElement> enter() throws IOException {
@@ -193,9 +215,17 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
       Throwable cause = e.getCause();
       if (cause instanceof IOException) {
         throw (IOException) cause;
+      } else if (!getDiagnosticMessages().isEmpty()) {
+        return Collections.emptyList();
       }
 
       throw new AssertionError(e);
+    } finally {
+      if (!allowCompilationErrors && !diagnosticCollector.getDiagnosticMessages().isEmpty()) {
+        fail(
+            "Compilation failed! Diagnostics:\n"
+                + getDiagnosticMessages().stream().collect(Collectors.joining("\n")));
+      }
     }
   }
 
@@ -232,6 +262,10 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
     return getJavacTask().getTypes();
   }
 
+  public Messager getMessager() {
+    return new TreesMessager(getTrees());
+  }
+
   public BuckJavacTask getJavacTask() {
     if (javacTask == null) {
       compileClasspath();
@@ -244,13 +278,23 @@ public class TestCompiler extends ExternalResource implements AutoCloseable {
         options.add(Joiner.on(File.pathSeparatorChar).join(classpath));
       }
 
+      ErrorSuppressingDiagnosticListener errorSuppressingDiagnosticListener =
+          new ErrorSuppressingDiagnosticListener(diagnosticCollector);
       JavacTask innerTask =
           (JavacTask)
               javaCompiler.getTask(
-                  null, fileManager, diagnosticCollector, options, null, sourceFiles);
+                  null,
+                  fileManager,
+                  useFrontendOnlyJavacTask
+                      ? errorSuppressingDiagnosticListener
+                      : diagnosticCollector,
+                  options,
+                  null,
+                  sourceFiles);
 
       if (useFrontendOnlyJavacTask) {
         javacTask = new FrontendOnlyJavacTask(innerTask);
+        errorSuppressingDiagnosticListener.setTask(innerTask);
       } else {
         javacTask = new BuckJavacTask(innerTask);
       }

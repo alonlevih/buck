@@ -17,17 +17,16 @@
 package com.facebook.buck.command;
 
 import com.facebook.buck.artifact_cache.ArtifactCache;
-import com.facebook.buck.cli.BuckConfig;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.event.ThrowableConsoleEvent;
-import com.facebook.buck.io.BuckPaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.BuckPaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.core.JavaPackageFinder;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildId;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildContext;
 import com.facebook.buck.rules.BuildEngine;
 import com.facebook.buck.rules.BuildEngineBuildContext;
@@ -44,6 +43,7 @@ import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.StepFailedException;
 import com.facebook.buck.timing.Clock;
 import com.facebook.buck.util.Console;
+import com.facebook.buck.util.ErrorLogger;
 import com.facebook.buck.util.ExceptionWithHumanReadableMessage;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.MoreCollectors;
@@ -53,15 +53,16 @@ import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -111,6 +112,56 @@ public class Build implements Closeable {
     return executionContext;
   }
 
+  public int executeAndPrintFailuresToEventBus(
+      Iterable<BuildTarget> targetsish,
+      boolean isKeepGoing,
+      BuckEventBus eventBus,
+      Console console,
+      Optional<Path> pathToBuildReport)
+      throws InterruptedException {
+    int exitCode;
+
+    ImmutableList<BuildRule> rulesToBuild = getRulesToBuild(targetsish);
+
+    try {
+      List<BuildEngineResult> resultFutures = initializeBuild(rulesToBuild, isKeepGoing);
+      exitCode =
+          waitForBuildToFinishAndPrintFailuresToEventBus(
+              rulesToBuild, resultFutures, isKeepGoing, eventBus, console, pathToBuildReport);
+    } catch (Exception e) {
+      reportExceptionToUser(eventBus, e);
+      exitCode = 1;
+    }
+
+    return exitCode;
+  }
+
+  public int executeAndPrintFailuresToEventBusThenWaitForUploadsToComplete(
+      Iterable<BuildTarget> targetsish,
+      boolean isKeepGoing,
+      BuckEventBus eventBus,
+      Console console,
+      Optional<Path> pathToBuildReport)
+      throws InterruptedException {
+    int exitCode;
+
+    ImmutableList<BuildRule> rulesToBuild = getRulesToBuild(targetsish);
+
+    try {
+      List<BuildEngineResult> resultFutures = initializeBuild(rulesToBuild, isKeepGoing);
+      exitCode =
+          waitForBuildToFinishAndPrintFailuresToEventBus(
+              rulesToBuild, resultFutures, isKeepGoing, eventBus, console, pathToBuildReport);
+
+      waitForAllUploadsToFinish(resultFutures);
+    } catch (Exception e) {
+      reportExceptionToUser(eventBus, e);
+      exitCode = 1;
+    }
+
+    return exitCode;
+  }
+
   /**
    * When the user overrides the configured buck-out directory via the `.buckconfig` and also sets
    * the `project.buck_out_compat_link` setting to `true`, we symlink the original output path
@@ -141,19 +192,88 @@ public class Build implements Closeable {
     }
   }
 
-  /**
-   * If {@code isKeepGoing} is false, then this returns a future that succeeds only if all of {@code
-   * rulesToBuild} build successfully. Otherwise, this returns a future that should always succeed,
-   * even if individual rules fail to build. In that case, a failed build rule is indicated by a
-   * {@code null} value in the corresponding position in the iteration order of {@code
-   * rulesToBuild}.
-   *
-   * @param targetish The targets to build. All targets in this iterable must be unique.
-   */
-  @SuppressWarnings("PMD.EmptyCatchBlock")
-  public BuildExecutionResult executeBuild(
-      Iterable<? extends BuildTarget> targetish, boolean isKeepGoing)
-      throws IOException, ExecutionException, InterruptedException {
+  private ImmutableList<BuildRule> getRulesToBuild(Iterable<? extends BuildTarget> targetish) {
+    // It is important to use this logic to determine the set of rules to build rather than
+    // build.getActionGraph().getNodesWithNoIncomingEdges() because, due to graph enhancement,
+    // there could be disconnected subgraphs in the DependencyGraph that we do not want to build.
+    ImmutableSet<BuildTarget> targetsToBuild =
+        StreamSupport.stream(targetish.spliterator(), false)
+            .collect(MoreCollectors.toImmutableSet());
+
+    ImmutableList<BuildRule> rulesToBuild =
+        ImmutableList.copyOf(
+            targetsToBuild
+                .stream()
+                .map(buildTarget -> getRuleResolver().requireRule(buildTarget))
+                .collect(MoreCollectors.toImmutableSet()));
+
+    // Calculate and post the number of rules that need to built.
+    int numRules = buildEngine.getNumRulesToBuild(rulesToBuild);
+    getExecutionContext()
+        .getBuckEventBus()
+        .post(BuildEvent.ruleCountCalculated(targetsToBuild, numRules));
+    return rulesToBuild;
+  }
+
+  /** Represents an exceptional situation that happened while building requested rules. */
+  private static class BuildExecutionException extends ExecutionException {
+    private final ImmutableList<BuildRule> rulesToBuild;
+    private final List<BuildResult> buildResults;
+
+    BuildExecutionException(
+        Throwable cause, ImmutableList<BuildRule> rulesToBuild, List<BuildResult> buildResults) {
+      super(cause);
+      this.rulesToBuild = rulesToBuild;
+      this.buildResults = buildResults;
+    }
+
+    /**
+     * Creates a build execution result that might be partial when interrupted before all build
+     * rules had a chance to run.
+     */
+    public BuildExecutionResult createBuildExecutionResult() {
+      // Insertion order matters
+      LinkedHashMap<BuildRule, Optional<BuildResult>> resultBuilder = new LinkedHashMap<>();
+      for (int i = 0, len = buildResults.size(); i < len; i++) {
+        BuildRule rule = rulesToBuild.get(i);
+        resultBuilder.put(rule, Optional.ofNullable(buildResults.get(i)));
+      }
+
+      return BuildExecutionResult.builder()
+          .setFailures(
+              buildResults
+                  .stream()
+                  .filter(input -> input.getSuccess() == null)
+                  .collect(Collectors.toList()))
+          .setResults(resultBuilder)
+          .build();
+    }
+  }
+
+  private static BuildExecutionResult createBuildExecutionResult(
+      ImmutableList<BuildRule> rulesToBuild, List<BuildResult> results) {
+    // Insertion order matters
+    LinkedHashMap<BuildRule, Optional<BuildResult>> resultBuilder = new LinkedHashMap<>();
+
+    Preconditions.checkState(rulesToBuild.size() == results.size());
+    for (int i = 0, len = rulesToBuild.size(); i < len; i++) {
+      BuildRule rule = rulesToBuild.get(i);
+      resultBuilder.put(rule, Optional.ofNullable(results.get(i)));
+    }
+
+    return BuildExecutionResult.builder()
+        .setFailures(
+            results
+                .stream()
+                .filter(input -> input.getSuccess() == null)
+                .collect(Collectors.toList()))
+        .setResults(resultBuilder)
+        .build();
+  }
+
+  private List<BuildEngineResult> initializeBuild(
+      ImmutableList<BuildRule> rulesToBuild, boolean isKeepGoing) throws IOException {
+
     BuildId buildId = executionContext.getBuildId();
     BuildEngineBuildContext buildContext =
         BuildEngineBuildContext.builder()
@@ -174,50 +294,27 @@ public class Build implements Closeable {
             .setKeepGoing(isKeepGoing)
             .build();
 
-    // It is important to use this logic to determine the set of rules to build rather than
-    // build.getActionGraph().getNodesWithNoIncomingEdges() because, due to graph enhancement,
-    // there could be disconnected subgraphs in the DependencyGraph that we do not want to build.
-    ImmutableSet<BuildTarget> targetsToBuild =
-        StreamSupport.stream(targetish.spliterator(), false)
-            .collect(MoreCollectors.toImmutableSet());
-
-    // It is important to use this logic to determine the set of rules to build rather than
-    // build.getActionGraph().getNodesWithNoIncomingEdges() because, due to graph enhancement,
-    // there could be disconnected subgraphs in the DependencyGraph that we do not want to build.
-    ImmutableList<BuildRule> rulesToBuild =
-        ImmutableList.copyOf(
-            targetsToBuild
-                .stream()
-                .map(
-                    buildTarget -> {
-                      try {
-                        return getRuleResolver().requireRule(buildTarget);
-                      } catch (NoSuchBuildTargetException e) {
-                        throw new HumanReadableException(
-                            "No build rule found for target %s", buildTarget);
-                      }
-                    })
-                .collect(MoreCollectors.toImmutableSet()));
-
-    // Calculate and post the number of rules that need to built.
-    int numRules = buildEngine.getNumRulesToBuild(rulesToBuild);
-    getExecutionContext()
-        .getBuckEventBus()
-        .post(BuildEvent.ruleCountCalculated(targetsToBuild, numRules));
-
     // Setup symlinks required when configuring the output path.
     createConfiguredBuckOutSymlinks();
 
-    List<BuildEngineResult> futures =
+    List<BuildEngineResult> resultFutures =
         rulesToBuild
             .stream()
             .map(rule -> buildEngine.build(buildContext, executionContext, rule))
             .collect(MoreCollectors.toImmutableList());
 
+    return resultFutures;
+  }
+
+  private static BuildExecutionResult waitForBuildToFinish(
+      ImmutableList<BuildRule> rulesToBuild,
+      List<BuildEngineResult> resultFutures,
+      boolean isKeepGoing)
+      throws ExecutionException, InterruptedException {
     // Get the Future representing the build and then block until everything is built.
     ListenableFuture<List<BuildResult>> buildFuture =
         Futures.allAsList(
-            futures.stream().map(BuildEngineResult::getResult).collect(Collectors.toList()));
+            resultFutures.stream().map(BuildEngineResult::getResult).collect(Collectors.toList()));
     List<BuildResult> results;
     try {
       results = buildFuture.get();
@@ -225,7 +322,7 @@ public class Build implements Closeable {
         for (BuildResult result : results) {
           Throwable thrown = result.getFailure();
           if (thrown != null) {
-            throw new ExecutionException(thrown);
+            throw new BuildExecutionException(thrown, rulesToBuild, results);
           }
         }
       }
@@ -236,112 +333,172 @@ public class Build implements Closeable {
           || t instanceof ClosedByInterruptException) {
         try {
           buildFuture.cancel(true);
-        } catch (CancellationException ignored) {
+        } catch (CancellationException ex) {
           // Rethrow original InterruptedException instead.
+          LOG.warn(ex, "Received CancellationException during processing of InterruptedException");
         }
         Threads.interruptCurrentThread();
       }
       throw e;
     }
-
-    // Insertion order matters
-    LinkedHashMap<BuildRule, Optional<BuildResult>> resultBuilder = new LinkedHashMap<>();
-
-    Preconditions.checkState(rulesToBuild.size() == results.size());
-    for (int i = 0, len = rulesToBuild.size(); i < len; i++) {
-      BuildRule rule = rulesToBuild.get(i);
-      resultBuilder.put(rule, Optional.ofNullable(results.get(i)));
-    }
-
-    return BuildExecutionResult.builder()
-        .setFailures(FluentIterable.from(results).filter(input -> input.getSuccess() == null))
-        .setResults(resultBuilder)
-        .build();
+    return createBuildExecutionResult(rulesToBuild, results);
   }
 
-  private String getFailureMessage(Throwable thrown) {
-    return "BUILD FAILED: " + thrown.getMessage();
-  }
-
-  private String getFailureMessageWithClassName(Throwable thrown) {
-    return "BUILD FAILED: " + thrown.getClass().getName() + " " + thrown.getMessage();
-  }
-
-  public int executeAndPrintFailuresToEventBus(
-      Iterable<BuildTarget> targetsish,
+  private int processBuildReportAndGenerateExitCode(
+      BuildExecutionResult buildExecutionResult,
       boolean isKeepGoing,
       BuckEventBus eventBus,
       Console console,
       Optional<Path> pathToBuildReport)
-      throws InterruptedException {
+      throws IOException {
+    int exitCode;
+
+    SourcePathResolver pathResolver =
+        DefaultSourcePathResolver.from(new SourcePathRuleFinder(ruleResolver));
+    BuildReport buildReport = new BuildReport(buildExecutionResult, pathResolver);
+
+    if (isKeepGoing) {
+      String buildReportText = buildReport.generateForConsole(console);
+      buildReportText =
+          buildReportText.isEmpty()
+              ? "Failure report is empty."
+              :
+              // Remove trailing newline from build report.
+              buildReportText.substring(0, buildReportText.length() - 1);
+      eventBus.post(ConsoleEvent.info(buildReportText));
+      exitCode = buildExecutionResult.getFailures().isEmpty() ? 0 : 1;
+      if (exitCode != 0) {
+        eventBus.post(ConsoleEvent.severe("Not all rules succeeded."));
+      }
+    } else {
+      exitCode = 0;
+    }
+
+    if (pathToBuildReport.isPresent()) {
+      // Note that pathToBuildReport is an absolute path that may exist outside of the project
+      // root, so it is not appropriate to use ProjectFilesystem to write the output.
+      String jsonBuildReport = buildReport.generateJsonBuildReport();
+      // TODO(cjhopman): The build report should use an ErrorLogger to extract good error
+      // messages.
+      try {
+        Files.write(jsonBuildReport, pathToBuildReport.get().toFile(), Charsets.UTF_8);
+      } catch (IOException e) {
+        eventBus.post(ThrowableConsoleEvent.create(e, "Failed writing report"));
+        exitCode = 1;
+      }
+    }
+
+    return exitCode;
+  }
+
+  private int waitForBuildToFinishAndPrintFailuresToEventBus(
+      ImmutableList<BuildRule> rulesToBuild,
+      List<BuildEngineResult> resultFutures,
+      boolean isKeepGoing,
+      BuckEventBus eventBus,
+      Console console,
+      Optional<Path> pathToBuildReport) {
     int exitCode;
 
     try {
-      try {
-        BuildExecutionResult buildExecutionResult = executeBuild(targetsish, isKeepGoing);
+      // Can throw BuildExecutionException
+      BuildExecutionResult buildExecutionResult =
+          waitForBuildToFinish(rulesToBuild, resultFutures, isKeepGoing);
 
-        SourcePathResolver pathResolver =
-            DefaultSourcePathResolver.from(new SourcePathRuleFinder(ruleResolver));
-        BuildReport buildReport = new BuildReport(buildExecutionResult, pathResolver);
-
-        if (isKeepGoing) {
-          String buildReportText = buildReport.generateForConsole(console);
-          buildReportText =
-              buildReportText.isEmpty()
-                  ? "Failure report is empty."
-                  :
-                  // Remove trailing newline from build report.
-                  buildReportText.substring(0, buildReportText.length() - 1);
-          eventBus.post(ConsoleEvent.info(buildReportText));
-          exitCode = buildExecutionResult.getFailures().isEmpty() ? 0 : 1;
-          if (exitCode != 0) {
-            eventBus.post(ConsoleEvent.severe("Not all rules succeeded."));
-          }
-        } else {
-          exitCode = 0;
-        }
-
-        if (pathToBuildReport.isPresent()) {
-          // Note that pathToBuildReport is an absolute path that may exist outside of the project
-          // root, so it is not appropriate to use ProjectFilesystem to write the output.
-          String jsonBuildReport = buildReport.generateJsonBuildReport();
-          try {
-            Files.write(jsonBuildReport, pathToBuildReport.get().toFile(), Charsets.UTF_8);
-          } catch (IOException e) {
-            eventBus.post(ThrowableConsoleEvent.create(e, "Failed writing report"));
-            exitCode = 1;
-          }
-        }
-      } catch (ExecutionException | RuntimeException e) {
-        // This is likely a checked exception that was caught while building a build rule.
-        Throwable cause = e.getCause();
-        if (cause == null) {
-          Throwables.throwIfInstanceOf(e, RuntimeException.class);
-          throw new RuntimeException(e);
-        }
-        Throwables.throwIfInstanceOf(cause, IOException.class);
-        Throwables.throwIfInstanceOf(cause, StepFailedException.class);
-        Throwables.throwIfInstanceOf(cause, InterruptedException.class);
-        Throwables.throwIfInstanceOf(cause, ClosedByInterruptException.class);
-        Throwables.throwIfInstanceOf(cause, HumanReadableException.class);
-        if (cause instanceof ExceptionWithHumanReadableMessage) {
-          throw new HumanReadableException((ExceptionWithHumanReadableMessage) cause);
-        }
-
-        LOG.debug(e, "Got an exception during the build.");
-        throw new RuntimeException(e);
+      exitCode =
+          processBuildReportAndGenerateExitCode(
+              buildExecutionResult, isKeepGoing, eventBus, console, pathToBuildReport);
+    } catch (Exception e) {
+      if (e instanceof BuildExecutionException) {
+        pathToBuildReport.ifPresent(
+            path -> writePartialBuildReport(eventBus, path, (BuildExecutionException) e));
       }
-    } catch (IOException e) {
-      LOG.debug(e, "Got an exception during the build.");
-      eventBus.post(ConsoleEvent.severe(getFailureMessageWithClassName(e)));
-      exitCode = 1;
-    } catch (StepFailedException e) {
-      LOG.debug(e, "Got an exception during the build.");
-      eventBus.post(ConsoleEvent.severe(getFailureMessage(e)));
+      reportExceptionToUser(eventBus, e);
       exitCode = 1;
     }
 
     return exitCode;
+  }
+
+  private static void waitForAllUploadsToFinish(List<BuildEngineResult> resultFutures)
+      throws InterruptedException, ExecutionException {
+    ListenableFuture<List<BuildResult>> buildFuture =
+        Futures.allAsList(
+            resultFutures.stream().map(BuildEngineResult::getResult).collect(Collectors.toList()));
+
+    List<BuildResult> buildResults = buildFuture.get();
+
+    ListenableFuture<List<Void>> uploadCompleteFutures =
+        Futures.allAsList(
+            buildResults
+                .stream()
+                .map(br -> br.getUploadCompleteFuture())
+                .collect(Collectors.toList()));
+
+    // Wait for uploads to finish
+    uploadCompleteFutures.get();
+  }
+
+  private void reportExceptionToUser(BuckEventBus eventBus, Exception e) {
+    if (e instanceof RuntimeException) {
+      e = rootCauseOfBuildException(e);
+    }
+    new ErrorLogger(eventBus, "Build failed: ", "Got an exception during the build.") {
+      @Override
+      protected String getMessageForRootCause(Throwable rootCause) {
+        if (rootCause instanceof HumanReadableException) {
+          return ((HumanReadableException) rootCause).getHumanReadableErrorMessage();
+        } else {
+          ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+          rootCause.printStackTrace(new PrintStream(outputStream));
+          return new String(outputStream.toByteArray());
+        }
+      }
+    }.logException(e);
+  }
+
+  /**
+   * Returns a root cause of the build exception {@code e}.
+   *
+   * @param e The build exception.
+   * @return The root cause exception for why the build failed.
+   */
+  private Exception rootCauseOfBuildException(Exception e) {
+    Throwable cause = e.getCause();
+    if (cause == null || !(cause instanceof Exception)) {
+      return e;
+    }
+    if (cause instanceof IOException
+        || cause instanceof StepFailedException
+        || cause instanceof InterruptedException
+        || cause instanceof ExceptionWithHumanReadableMessage) {
+      return (Exception) cause;
+    }
+    return e;
+  }
+
+  /**
+   * Writes build report for a build interrupted by execution exception.
+   *
+   * <p>In case {@code keepGoing} flag is not set, the build terminates without having all build
+   * results, but clients are still very much interested in finding out what exactly went wrong.
+   * {@link BuildExecutionException} captures partial build execution result, which can still be
+   * used to provide the most useful information about build result.
+   */
+  private void writePartialBuildReport(
+      BuckEventBus eventBus, Path pathToBuildReport, BuildExecutionException e) {
+    // Note that pathToBuildReport is an absolute path that may exist outside of the project
+    // root, so it is not appropriate to use ProjectFilesystem to write the output.
+    SourcePathResolver pathResolver =
+        DefaultSourcePathResolver.from(new SourcePathRuleFinder(ruleResolver));
+    BuildReport buildReport = new BuildReport(e.createBuildExecutionResult(), pathResolver);
+    try {
+      String jsonBuildReport = buildReport.generateJsonBuildReport();
+      Files.write(jsonBuildReport, pathToBuildReport.toFile(), Charsets.UTF_8);
+    } catch (IOException writeException) {
+      LOG.warn(writeException, "Failed to write the build report to %s", pathToBuildReport);
+      eventBus.post(ThrowableConsoleEvent.create(e, "Failed writing report"));
+    }
   }
 
   @Override

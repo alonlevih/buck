@@ -16,8 +16,10 @@
 
 package com.facebook.buck.android;
 
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.jvm.java.CompileToJarStepFactory;
+import com.facebook.buck.android.packageable.AndroidPackageableCollector;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.AbiGenerationMode;
+import com.facebook.buck.jvm.java.ConfiguredCompiler;
 import com.facebook.buck.jvm.java.HasJavaAbi;
 import com.facebook.buck.jvm.java.JarBuildStepsFactory;
 import com.facebook.buck.jvm.java.PrebuiltJar;
@@ -33,6 +35,7 @@ import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Iterables;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -53,19 +56,22 @@ public class AndroidPrebuiltAar extends AndroidLibrary
       SourcePath nativeLibsDirectory,
       PrebuiltJar prebuiltJar,
       UnzipAar unzipAar,
-      CompileToJarStepFactory compileStepFactory,
+      ConfiguredCompiler configuredCompiler,
       Iterable<PrebuiltJar> exportedDeps,
-      ZipArchiveDependencySupplier abiClasspath) {
+      ZipArchiveDependencySupplier abiClasspath,
+      boolean requiredForSourceAbi) {
     super(
         androidLibraryBuildTarget,
         projectFilesystem,
-        androidLibraryParams.copyAppendingExtraDeps(
-            ruleFinder.filterBuildRuleInputs(abiClasspath.get())),
+        ImmutableSortedSet.copyOf(
+            Iterables.concat(
+                androidLibraryParams.getBuildDeps(),
+                ruleFinder.filterBuildRuleInputs(abiClasspath.get()))),
         resolver,
         new JarBuildStepsFactory(
             projectFilesystem,
             ruleFinder,
-            compileStepFactory,
+            configuredCompiler,
             /* srcs */ ImmutableSortedSet.of(),
             /* resources */ ImmutableSortedSet.of(),
             /* resourcesRoot */ Optional.empty(),
@@ -75,9 +81,11 @@ public class AndroidPrebuiltAar extends AndroidLibrary
             /* trackClassUsage */ false,
             /* compileTimeClasspathDeps */ ImmutableSortedSet.of(
                 prebuiltJar.getSourcePathToOutput()),
-            RemoveClassesPatternsMatcher.EMPTY),
+            RemoveClassesPatternsMatcher.EMPTY,
+            AbiGenerationMode.CLASS,
+            /* sourceOnlyAbiRuleInfo */ null),
         Optional.of(proguardConfig),
-        /* declaredDeps */ androidLibraryParams.getDeclaredDeps().get(),
+        /* firstOrderPackageableDeps */ androidLibraryParams.getDeclaredDeps().get(),
         /* exportedDeps */ ImmutableSortedSet.<BuildRule>naturalOrder()
             .add(prebuiltJar)
             .addAll(exportedDeps)
@@ -86,9 +94,10 @@ public class AndroidPrebuiltAar extends AndroidLibrary
         HasJavaAbi.getClassAbiJar(androidLibraryBuildTarget),
         /* mavenCoords */ Optional.empty(),
         Optional.of(
-            new ExplicitBuildTargetSourcePath(
+            ExplicitBuildTargetSourcePath.of(
                 unzipAar.getBuildTarget(), unzipAar.getAndroidManifest())),
-        /* tests */ ImmutableSortedSet.of());
+        /* tests */ ImmutableSortedSet.of(),
+        /* requiredForSourceAbi */ requiredForSourceAbi);
     this.unzipAar = unzipAar;
     this.prebuiltJar = prebuiltJar;
     this.nativeLibsDirectory = nativeLibsDirectory;
@@ -101,13 +110,13 @@ public class AndroidPrebuiltAar extends AndroidLibrary
 
   @Override
   public SourcePath getPathToTextSymbolsFile() {
-    return new ExplicitBuildTargetSourcePath(
+    return ExplicitBuildTargetSourcePath.of(
         unzipAar.getBuildTarget(), unzipAar.getTextSymbolsFile());
   }
 
   @Override
   public SourcePath getPathToRDotJavaPackageFile() {
-    return new ExplicitBuildTargetSourcePath(
+    return ExplicitBuildTargetSourcePath.of(
         unzipAar.getBuildTarget(), unzipAar.getPathToRDotJavaPackageFile());
   }
 

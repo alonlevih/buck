@@ -17,7 +17,7 @@
 package com.facebook.buck.js;
 
 import com.facebook.buck.apple.AppleLibraryBuilder;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.Either;
@@ -25,9 +25,11 @@ import com.facebook.buck.model.Pair;
 import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetNode;
+import com.facebook.buck.rules.query.Query;
 import com.facebook.buck.shell.ExportFileBuilder;
 import com.facebook.buck.shell.FakeWorkerBuilder;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
@@ -42,12 +44,12 @@ import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
 public class JsTestScenario {
-  final TargetGraph targetGraph;
-  final BuildRuleResolver resolver;
-  final BuildTarget workerTarget;
-  final ProjectFilesystem filesystem;
+  public final TargetGraph targetGraph;
+  public final BuildRuleResolver resolver;
+  public final BuildTarget workerTarget;
+  public final ProjectFilesystem filesystem;
 
-  static Builder builder() {
+  public static Builder builder() {
     return new Builder();
   }
 
@@ -88,7 +90,7 @@ public class JsTestScenario {
         .build(resolver, targetGraph);
   }
 
-  static class Builder {
+  public static class Builder {
     private final Set<TargetNode<?, ?>> nodes = new LinkedHashSet<>();
     private final BuildTarget workerTarget;
     private final ProjectFilesystem filesystem;
@@ -105,39 +107,55 @@ public class JsTestScenario {
       filesystem = other.filesystem;
     }
 
-    Builder bundleWithDeps(BuildTarget target, BuildTarget... dependencies) {
+    public Builder bundleWithDeps(BuildTarget target, BuildTarget... dependencies) {
       return bundle(target, ImmutableSortedSet.copyOf(dependencies));
     }
 
-    Builder bundle(BuildTarget target, ImmutableSortedSet<BuildTarget> deps) {
+    public Builder bundle(BuildTarget target, ImmutableSortedSet<BuildTarget> deps) {
       final Either<ImmutableSet<String>, String> entry = Either.ofLeft(ImmutableSet.of());
       nodes.add(new JsBundleBuilder(target, workerTarget, entry, filesystem).setDeps(deps).build());
 
       return this;
     }
 
-    Builder library(BuildTarget target, BuildTarget... libraryDependencies) {
+    public Builder library(BuildTarget target, BuildTarget... libraryDependencies) {
       nodes.add(
           new JsLibraryBuilder(target, filesystem)
-              .setLibs(ImmutableSortedSet.copyOf(libraryDependencies))
+              .setDeps(ImmutableSortedSet.copyOf(libraryDependencies))
               .setWorker(workerTarget)
               .build());
       return this;
     }
 
-    Builder library(BuildTarget target, SourcePath first, SourcePath... sources) {
+    public Builder library(
+        BuildTarget target, Query libraryDependenciesQuery, BuildTarget... libraryDependencies) {
+      nodes.add(
+          new JsLibraryBuilder(target, filesystem)
+              .setDepsQuery(libraryDependenciesQuery)
+              .setDeps(ImmutableSortedSet.copyOf(libraryDependencies))
+              .setWorker(workerTarget)
+              .build());
+      return this;
+    }
+
+    public Builder library(BuildTarget target, SourcePath first, SourcePath... sources) {
       addLibrary(
           target, null, Stream.concat(Stream.of(first), Stream.of(sources)).map(Either::ofLeft));
       return this;
     }
 
-    Builder library(BuildTarget target, String basePath, SourcePath... sources) {
+    public Builder library(BuildTarget target, String basePath, SourcePath... sources) {
       addLibrary(target, basePath, Stream.of(sources).map(Either::ofLeft));
       return this;
     }
 
-    Builder library(BuildTarget target, String basePath, Pair<SourcePath, String> source) {
+    public Builder library(BuildTarget target, String basePath, Pair<SourcePath, String> source) {
       addLibrary(target, basePath, Stream.of(source).map(Either::ofRight));
+      return this;
+    }
+
+    public Builder bundleGenrule(BuildTarget genruleTarget, BuildTarget bundleTarget) {
+      nodes.add(new JsBundleGenruleBuilder(genruleTarget, bundleTarget, filesystem).build());
       return this;
     }
 
@@ -153,12 +171,12 @@ public class JsTestScenario {
               .build());
     }
 
-    Builder arbitraryRule(BuildTarget target) {
+    public Builder arbitraryRule(BuildTarget target) {
       nodes.add(new ExportFileBuilder(target).build());
       return this;
     }
 
-    Builder appleLibraryWithDeps(BuildTarget target, BuildTarget... deps) {
+    public Builder appleLibraryWithDeps(BuildTarget target, BuildTarget... deps) {
       nodes.add(
           AppleLibraryBuilder.createBuilder(target)
               .setDeps(ImmutableSortedSet.copyOf(deps))
@@ -166,10 +184,10 @@ public class JsTestScenario {
       return this;
     }
 
-    JsTestScenario build() throws NoSuchBuildTargetException {
+    public JsTestScenario build() {
       final TargetGraph graph = TargetGraphFactory.newInstance(nodes);
       final BuildRuleResolver resolver =
-          new BuildRuleResolver(graph, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(graph, new DefaultTargetNodeToBuildRuleTransformer());
       for (TargetNode<?, ?> node : nodes) {
         resolver.requireRule(node.getBuildTarget());
       }

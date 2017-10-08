@@ -17,9 +17,9 @@
 package com.facebook.buck.jvm.java.abi;
 
 import com.facebook.buck.util.function.ThrowingSupplier;
-import com.facebook.buck.zip.CustomZipEntry;
-import com.facebook.buck.zip.JarBuilder;
-import com.facebook.buck.zip.JarEntrySupplier;
+import com.facebook.buck.util.zip.CustomZipEntry;
+import com.facebook.buck.util.zip.JarBuilder;
+import com.facebook.buck.util.zip.JarEntrySupplier;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -34,8 +34,7 @@ public class JarBuilderStubJarWriter implements StubJarWriter {
 
   @Override
   public void writeEntry(
-      Path relativePath, ThrowingSupplier<InputStream, IOException> streamSupplier)
-      throws IOException {
+      Path relativePath, ThrowingSupplier<InputStream, IOException> streamSupplier) {
     jarBuilder.addEntry(
         new JarEntrySupplier(new CustomZipEntry(relativePath), "me", streamSupplier));
   }

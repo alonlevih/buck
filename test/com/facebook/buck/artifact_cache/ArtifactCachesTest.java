@@ -20,7 +20,8 @@ import static org.junit.Assert.assertThat;
 
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.BuckEventBusForTests;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.facebook.buck.testutil.integration.TemporaryPaths;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -46,6 +47,7 @@ public class ArtifactCachesTest {
                 projectFilesystem,
                 Optional.empty(),
                 MoreExecutors.newDirectExecutorService(),
+                MoreExecutors.newDirectExecutorService(),
                 Optional.empty())
             .newInstance();
     assertThat(stripDecorators(artifactCache), Matchers.instanceOf(HttpArtifactCache.class));
@@ -64,6 +66,7 @@ public class ArtifactCachesTest {
                 projectFilesystem,
                 Optional.empty(),
                 MoreExecutors.newDirectExecutorService(),
+                MoreExecutors.newDirectExecutorService(),
                 Optional.empty())
             .newInstance();
 
@@ -75,7 +78,8 @@ public class ArtifactCachesTest {
     ArtifactCacheBuckConfig cacheConfig =
         ArtifactCacheBuckConfigTest.createFromText(
             "[cache]", "mode = sqlite", "sqlite_cache_names = name1");
-    ProjectFilesystem projectFilesystem = new ProjectFilesystem(tempDir.getRoot());
+    ProjectFilesystem projectFilesystem =
+        TestProjectFilesystems.createProjectFilesystem(tempDir.getRoot());
     BuckEventBus buckEventBus = BuckEventBusForTests.newInstance();
     ArtifactCache artifactCache =
         new ArtifactCaches(
@@ -83,6 +87,7 @@ public class ArtifactCachesTest {
                 buckEventBus,
                 projectFilesystem,
                 Optional.empty(),
+                MoreExecutors.newDirectExecutorService(),
                 MoreExecutors.newDirectExecutorService(),
                 Optional.empty())
             .newInstance();
@@ -111,6 +116,7 @@ public class ArtifactCachesTest {
                     buckEventBus,
                     projectFilesystem,
                     Optional.empty(),
+                    MoreExecutors.newDirectExecutorService(),
                     MoreExecutors.newDirectExecutorService(),
                     Optional.empty())
                 .newInstance());
@@ -146,7 +152,8 @@ public class ArtifactCachesTest {
             "sqlite_mode = readwrite",
             "[cache#name3]",
             "sqlite_mode = readonly");
-    ProjectFilesystem projectFilesystem = new ProjectFilesystem(tempDir.getRoot());
+    ProjectFilesystem projectFilesystem =
+        TestProjectFilesystems.createProjectFilesystem(tempDir.getRoot());
     BuckEventBus buckEventBus = BuckEventBusForTests.newInstance();
     ArtifactCache artifactCache =
         stripDecorators(
@@ -155,6 +162,7 @@ public class ArtifactCachesTest {
                     buckEventBus,
                     projectFilesystem,
                     Optional.empty(),
+                    MoreExecutors.newDirectExecutorService(),
                     MoreExecutors.newDirectExecutorService(),
                     Optional.empty())
                 .newInstance());
@@ -194,6 +202,7 @@ public class ArtifactCachesTest {
                 projectFilesystem,
                 Optional.empty(),
                 MoreExecutors.newDirectExecutorService(),
+                MoreExecutors.newDirectExecutorService(),
                 Optional.empty())
             .newInstance();
     assertThat(stripDecorators(artifactCache), Matchers.instanceOf(MultiArtifactCache.class));
@@ -212,6 +221,7 @@ public class ArtifactCachesTest {
                 buckEventBus,
                 projectFilesystem,
                 Optional.of("evilwifi"),
+                MoreExecutors.newDirectExecutorService(),
                 MoreExecutors.newDirectExecutorService(),
                 Optional.empty())
             .newInstance();

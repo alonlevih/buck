@@ -29,6 +29,8 @@ import com.facebook.buck.rules.BuildRuleType;
 import com.facebook.buck.rules.DefaultBuildTargetSourcePath;
 import com.facebook.buck.rules.RuleKey;
 import com.facebook.buck.rules.SourceRoot;
+import com.facebook.buck.rules.keys.hasher.ForwardingRuleKeyHasher;
+import com.facebook.buck.rules.keys.hasher.RuleKeyHasher;
 import com.facebook.buck.util.sha1.Sha1HashCode;
 import com.google.common.hash.HashCode;
 import java.nio.file.Paths;
@@ -170,9 +172,9 @@ public class ForwardingRuleKeyHasherTest {
     expect(guavaHasher.hash()).andReturn(hash);
     expect(stringHasher.hash()).andReturn(string);
 
-    expect(guavaHasher.putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1)))
+    expect(guavaHasher.putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1)))
         .andReturn(guavaHasher);
-    expect(stringHasher.putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1)))
+    expect(stringHasher.putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1)))
         .andReturn(stringHasher);
     expect(guavaHasher.hash()).andReturn(hash);
     expect(stringHasher.hash()).andReturn(string);
@@ -251,9 +253,9 @@ public class ForwardingRuleKeyHasherTest {
     expect(stringHasher.putBuildRuleType(BuildRuleType.of("45"))).andReturn(stringHasher);
     expect(guavaHasher.putBuildTarget(TARGET_1)).andReturn(guavaHasher);
     expect(stringHasher.putBuildTarget(TARGET_1)).andReturn(stringHasher);
-    expect(guavaHasher.putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1)))
+    expect(guavaHasher.putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1)))
         .andReturn(guavaHasher);
-    expect(stringHasher.putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1)))
+    expect(stringHasher.putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1)))
         .andReturn(stringHasher);
     expect(guavaHasher.putContainer(RuleKeyHasher.Container.LIST, 45)).andReturn(guavaHasher);
     expect(stringHasher.putContainer(RuleKeyHasher.Container.LIST, 45)).andReturn(stringHasher);
@@ -293,7 +295,7 @@ public class ForwardingRuleKeyHasherTest {
     newHasher(guavaHasher, stringHasher).putBuildRuleType(BuildRuleType.of("42")).hash();
     newHasher(guavaHasher, stringHasher).putBuildTarget(TARGET_1).hash();
     newHasher(guavaHasher, stringHasher)
-        .putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1))
+        .putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1))
         .hash();
     newHasher(guavaHasher, stringHasher).putContainer(RuleKeyHasher.Container.LIST, 42).hash();
     newHasher(guavaHasher, stringHasher).putContainer(RuleKeyHasher.Container.MAP, 42).hash();
@@ -320,7 +322,7 @@ public class ForwardingRuleKeyHasherTest {
         .putRuleKey(RULE_KEY_1)
         .putBuildRuleType(BuildRuleType.of("45"))
         .putBuildTarget(TARGET_1)
-        .putBuildTargetSourcePath(new DefaultBuildTargetSourcePath(TARGET_1))
+        .putBuildTargetSourcePath(DefaultBuildTargetSourcePath.of(TARGET_1))
         .putContainer(RuleKeyHasher.Container.LIST, 45)
         .putContainer(RuleKeyHasher.Container.MAP, 45)
         .putWrapper(RuleKeyHasher.Wrapper.OPTIONAL)

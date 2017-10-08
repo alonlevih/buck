@@ -17,7 +17,7 @@
 package com.facebook.buck.jvm.java.abi.source;
 
 import com.facebook.buck.event.api.BuckTracing;
-import com.facebook.buck.jvm.java.abi.source.api.BootClasspathOracle;
+import com.facebook.buck.jvm.java.abi.source.api.SourceOnlyAbiRuleInfo;
 import com.facebook.buck.jvm.java.plugin.adapter.BuckJavacTask;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
@@ -60,22 +60,38 @@ class InterfaceValidator {
   private final Elements elements;
   private final Diagnostic.Kind messageKind;
   private final Trees trees;
-  private final BootClasspathOracle bootClasspathOracle;
+  private final SourceOnlyAbiRuleInfo ruleInfo;
 
   public InterfaceValidator(
-      Diagnostic.Kind messageKind, BuckJavacTask task, BootClasspathOracle bootClasspathOracle) {
+      Diagnostic.Kind messageKind, BuckJavacTask task, SourceOnlyAbiRuleInfo ruleInfo) {
     this.messageKind = messageKind;
     trees = task.getTrees();
     elements = task.getElements();
-    this.bootClasspathOracle = bootClasspathOracle;
+    this.ruleInfo = ruleInfo;
   }
 
   public void validate(List<? extends CompilationUnitTree> compilationUnits) {
     try (BuckTracing.TraceSection trace = BUCK_TRACING.traceSection("buck.abi.validate")) {
-      new InterfaceTypeAndConstantReferenceFinder(
+      new InterfaceScanner(
               trees,
-              new InterfaceTypeAndConstantReferenceFinder.Listener() {
+              new InterfaceScanner.Listener() {
                 private final Set<Element> importedTypes = new HashSet<>();
+
+                @Override
+                public void onAnnotationTypeFound(TypeElement type, TreePath path) {
+                  if (!ruleInfo.ruleIsRequiredForSourceOnlyAbi()) {
+                    trees.printMessage(
+                        messageKind,
+                        String.format(
+                            "Annotation definitions must be in rules with required_for_source_only_abi = True.\n"
+                                + "For a quick fix, add required_for_source_only_abi = True to %s.\n"
+                                + "A better fix is to move %s to a new rule that contains only\n"
+                                + "annotations, and mark that rule required_for_source_only_abi.\n",
+                            ruleInfo.getRuleName(), type.getSimpleName()),
+                        path.getLeaf(),
+                        path.getCompilationUnit());
+                  }
+                }
 
                 @Override
                 public void onTypeImported(TypeElement type) {
@@ -132,7 +148,7 @@ class InterfaceValidator {
                 }
 
                 private boolean isOnBootClasspath(TypeElement typeElement) {
-                  return bootClasspathOracle.isOnBootClasspath(
+                  return ruleInfo.classIsOnBootClasspath(
                       elements.getBinaryName(typeElement).toString());
                 }
 

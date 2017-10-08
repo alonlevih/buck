@@ -17,7 +17,7 @@
 package com.facebook.buck.jvm.java;
 
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRuleWithDeclaredAndExtraDeps;
@@ -43,7 +43,9 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
 import javax.annotation.Nullable;
 
 @BuildsAnnotationProcessor
@@ -58,6 +60,7 @@ public class JavaBinary extends AbstractBuildRuleWithDeclaredAndExtraDeps
 
   @AddToRuleKey @Nullable private final SourcePath manifestFile;
   private final boolean mergeManifests;
+  private final boolean disallowAllDuplicates;
 
   @Nullable @AddToRuleKey private final SourcePath metaInfDirectory;
 
@@ -80,6 +83,7 @@ public class JavaBinary extends AbstractBuildRuleWithDeclaredAndExtraDeps
       @Nullable String mainClass,
       @Nullable SourcePath manifestFile,
       boolean mergeManifests,
+      boolean disallowAllDuplicates,
       @Nullable Path metaInfDirectory,
       ImmutableSet<Pattern> blacklist,
       ImmutableSet<JavaLibrary> transitiveClasspathDeps,
@@ -90,9 +94,10 @@ public class JavaBinary extends AbstractBuildRuleWithDeclaredAndExtraDeps
     this.mainClass = mainClass;
     this.manifestFile = manifestFile;
     this.mergeManifests = mergeManifests;
+    this.disallowAllDuplicates = disallowAllDuplicates;
     this.metaInfDirectory =
         metaInfDirectory != null
-            ? new PathSourcePath(getProjectFilesystem(), metaInfDirectory)
+            ? PathSourcePath.of(getProjectFilesystem(), metaInfDirectory)
             : null;
     this.blacklist = blacklist;
     blacklistPatternsMatcher = new PatternsMatcher(blacklist);
@@ -147,14 +152,19 @@ public class JavaBinary extends AbstractBuildRuleWithDeclaredAndExtraDeps
     Step jar =
         new JarDirectoryStep(
             getProjectFilesystem(),
-            outputFile,
-            includePaths,
-            mainClass,
-            manifestPath,
-            mergeManifests,
-            entry ->
-                blacklistPatternsMatcher.hasPatterns()
-                    && blacklistPatternsMatcher.substringMatches(entry.getName()));
+            JarParameters.builder()
+                .setJarPath(outputFile)
+                .setEntriesToJar(includePaths)
+                .setMainClass(Optional.ofNullable(mainClass))
+                .setManifestFile(Optional.ofNullable(manifestPath))
+                .setMergeManifests(mergeManifests)
+                .setDisallowAllDuplicates(disallowAllDuplicates)
+                .setRemoveEntryPredicate(
+                    entry ->
+                        blacklistPatternsMatcher.hasPatterns()
+                            && blacklistPatternsMatcher.substringMatches(
+                                ((ZipEntry) entry).getName()))
+                .build());
     commands.add(jar);
 
     buildableContext.recordArtifact(outputFile);
@@ -188,7 +198,7 @@ public class JavaBinary extends AbstractBuildRuleWithDeclaredAndExtraDeps
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(
+    return ExplicitBuildTargetSourcePath.of(
         getBuildTarget(),
         Paths.get(
             String.format(

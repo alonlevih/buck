@@ -21,7 +21,7 @@ import com.facebook.buck.distributed.thrift.BuildJobState;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashEntry;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashes;
 import com.facebook.buck.distributed.thrift.StampedeId;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.util.ThrowingPrintWriter;
 import com.google.common.collect.Lists;
 import java.io.BufferedOutputStream;
@@ -105,7 +105,8 @@ public class DistBuildSourceFilesCommand extends AbstractDistBuildCommand {
         new CommandThreadManager(
             "DistBuildSourceFiles", getConcurrencyLimit(params.getBuckConfig()))) {
       BuildJobState jobState =
-          BuildCommand.getDistBuildState(arguments, params, pool.getExecutor());
+          BuildCommand.getDistBuildState(
+              arguments, params, pool.getWeightedListeningExecutorService());
       outputResultToTempFile(params, jobState);
     }
   }

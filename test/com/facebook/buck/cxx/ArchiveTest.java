@@ -21,10 +21,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cxx.platform.Archiver;
-import com.facebook.buck.cxx.platform.BsdArchiver;
-import com.facebook.buck.cxx.platform.GnuArchiver;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.ArchiveContents;
+import com.facebook.buck.cxx.toolchain.Archiver;
+import com.facebook.buck.cxx.toolchain.BsdArchiver;
+import com.facebook.buck.cxx.toolchain.GnuArchiver;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildContext;
@@ -37,6 +38,7 @@ import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.HashedFileTool;
 import com.facebook.buck.rules.RuleKey;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -67,13 +69,13 @@ public class ArchiveTest {
   private static final Path DEFAULT_OUTPUT = Paths.get("foo/libblah.a");
   private static final ImmutableList<SourcePath> DEFAULT_INPUTS =
       ImmutableList.of(
-          new FakeSourcePath("a.o"), new FakeSourcePath("b.o"), new FakeSourcePath("c.o"));
+          FakeSourcePath.of("a.o"), FakeSourcePath.of("b.o"), FakeSourcePath.of("c.o"));
 
   @Test
   public void testThatInputChangesCauseRuleKeyChanges() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -101,7 +103,7 @@ public class ArchiveTest {
                     ImmutableList.of(),
                     DEFAULT_RANLIB,
                     ImmutableList.of(),
-                    Archive.Contents.NORMAL,
+                    ArchiveContents.NORMAL,
                     DEFAULT_OUTPUT,
                     DEFAULT_INPUTS,
                     /* cacheable */ true));
@@ -118,7 +120,7 @@ public class ArchiveTest {
                     ImmutableList.of(),
                     DEFAULT_RANLIB,
                     ImmutableList.of(),
-                    Archive.Contents.NORMAL,
+                    ArchiveContents.NORMAL,
                     DEFAULT_OUTPUT,
                     DEFAULT_INPUTS,
                     /* cacheable */ true));
@@ -136,7 +138,7 @@ public class ArchiveTest {
                     ImmutableList.of(),
                     DEFAULT_RANLIB,
                     ImmutableList.of(),
-                    Archive.Contents.NORMAL,
+                    ArchiveContents.NORMAL,
                     Paths.get("different"),
                     DEFAULT_INPUTS,
                     /* cacheable */ true));
@@ -154,9 +156,9 @@ public class ArchiveTest {
                     ImmutableList.of(),
                     DEFAULT_RANLIB,
                     ImmutableList.of(),
-                    Archive.Contents.NORMAL,
+                    ArchiveContents.NORMAL,
                     DEFAULT_OUTPUT,
-                    ImmutableList.of(new FakeSourcePath("different")),
+                    ImmutableList.of(FakeSourcePath.of("different")),
                     /* cacheable */ true));
     assertNotEquals(defaultRuleKey, inputChange);
 
@@ -172,7 +174,7 @@ public class ArchiveTest {
                     ImmutableList.of(),
                     DEFAULT_RANLIB,
                     ImmutableList.of(),
-                    Archive.Contents.NORMAL,
+                    ArchiveContents.NORMAL,
                     DEFAULT_OUTPUT,
                     DEFAULT_INPUTS,
                     /* cacheable */ true));
@@ -182,7 +184,8 @@ public class ArchiveTest {
   @Test
   public void flagsArePropagated() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
@@ -196,9 +199,9 @@ public class ArchiveTest {
             ImmutableList.of("-foo"),
             DEFAULT_RANLIB,
             ImmutableList.of("-bar"),
-            Archive.Contents.NORMAL,
+            ArchiveContents.NORMAL,
             DEFAULT_OUTPUT,
-            ImmutableList.of(new FakeSourcePath("simple.o")),
+            ImmutableList.of(FakeSourcePath.of("simple.o")),
             /* cacheable */ true);
 
     BuildContext buildContext =
@@ -220,7 +223,8 @@ public class ArchiveTest {
   @Test
   public void testThatBuildTargetSourcePathDepsAndPathsArePropagated() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
 
@@ -245,10 +249,10 @@ public class ArchiveTest {
             ImmutableList.of(),
             DEFAULT_RANLIB,
             ImmutableList.of(),
-            Archive.Contents.NORMAL,
+            ArchiveContents.NORMAL,
             DEFAULT_OUTPUT,
             ImmutableList.of(
-                new FakeSourcePath("simple.o"),
+                FakeSourcePath.of("simple.o"),
                 genrule1.getSourcePathToOutput(),
                 genrule2.getSourcePathToOutput()),
             /* cacheable */ true);

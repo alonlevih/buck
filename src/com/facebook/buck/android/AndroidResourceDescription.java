@@ -17,8 +17,8 @@
 package com.facebook.buck.android;
 
 import com.facebook.buck.android.aapt.MiniAapt;
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.model.Either;
@@ -26,7 +26,6 @@ import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.Flavored;
 import com.facebook.buck.model.InternalFlavor;
 import com.facebook.buck.model.Pair;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -75,8 +74,11 @@ public class AndroidResourceDescription
   @VisibleForTesting
   static final Flavor RESOURCES_SYMLINK_TREE_FLAVOR = InternalFlavor.of("resources-symlink-tree");
 
+  public static final Flavor ANDROID_RESOURCE_INDEX_FLAVOR =
+      InternalFlavor.of("android-resource-index");
+
   @VisibleForTesting
-  static final Flavor ASSETS_SYMLINK_TREE_FLAVOR = InternalFlavor.of("assets-symlink-tree");
+  public static final Flavor ASSETS_SYMLINK_TREE_FLAVOR = InternalFlavor.of("assets-symlink-tree");
 
   public static final Flavor AAPT2_COMPILE_FLAVOR = InternalFlavor.of("aapt2_compile");
 
@@ -142,12 +144,11 @@ public class AndroidResourceDescription
           resDir.isPresent(),
           "Tried to require rule %s, but no resource dir is preset.",
           buildTarget);
-      params =
-          params
-              .withDeclaredDeps(
-                  ImmutableSortedSet.copyOf(ruleFinder.filterBuildRuleInputs(resDir.get())))
-              .withoutExtraDeps();
-      return new Aapt2Compile(buildTarget, projectFilesystem, params, resDir.get());
+      return new Aapt2Compile(
+          buildTarget,
+          projectFilesystem,
+          ImmutableSortedSet.copyOf(ruleFinder.filterBuildRuleInputs(resDir.get())),
+          resDir.get());
     }
 
     params =
@@ -161,6 +162,15 @@ public class AndroidResourceDescription
                     .getSecond()
                     .map(ruleFinder::filterBuildRuleInputs)
                     .orElse(ImmutableSet.of())));
+
+    if (flavors.contains(ANDROID_RESOURCE_INDEX_FLAVOR)) {
+      Optional<SourcePath> resDir = resInputs.getSecond();
+      Preconditions.checkArgument(
+          resDir.isPresent(),
+          "Tried to require rule %s, but no resource dir is preset.",
+          buildTarget);
+      return new AndroidResourceIndex(buildTarget, projectFilesystem, params, resDir.get());
+    }
 
     return new AndroidResource(
         buildTarget,
@@ -219,7 +229,7 @@ public class AndroidResourceDescription
       BuildRuleResolver ruleResolver, TargetNode<AndroidResourceDescriptionArg, ?> node) {
     AndroidResourceDescriptionArg arg = node.getConstructorArg();
     if (arg.getProjectRes().isPresent()) {
-      return Optional.of(new PathSourcePath(node.getFilesystem(), arg.getProjectRes().get()));
+      return Optional.of(PathSourcePath.of(node.getFilesystem(), arg.getProjectRes().get()));
     }
     if (!arg.getRes().isPresent()) {
       return Optional.empty();
@@ -235,7 +245,7 @@ public class AndroidResourceDescription
       BuildRuleResolver ruleResolver, TargetNode<AndroidResourceDescriptionArg, ?> node) {
     AndroidResourceDescriptionArg arg = node.getConstructorArg();
     if (arg.getProjectAssets().isPresent()) {
-      return Optional.of(new PathSourcePath(node.getFilesystem(), arg.getProjectAssets().get()));
+      return Optional.of(PathSourcePath.of(node.getFilesystem(), arg.getProjectAssets().get()));
     }
     if (!arg.getAssets().isPresent()) {
       return Optional.empty();
@@ -285,11 +295,7 @@ public class AndroidResourceDescription
     }
     BuildTarget symlinkTreeTarget = resourceRuleTarget.withFlavors(symlinkTreeFlavor);
     SymlinkTree symlinkTree;
-    try {
-      symlinkTree = (SymlinkTree) ruleResolver.requireRule(symlinkTreeTarget);
-    } catch (NoSuchBuildTargetException e) {
-      throw new RuntimeException(e);
-    }
+    symlinkTree = (SymlinkTree) ruleResolver.requireRule(symlinkTreeTarget);
     return new Pair<>(Optional.of(symlinkTree), Optional.of(symlinkTree.getSourcePathToOutput()));
   }
 
@@ -316,7 +322,7 @@ public class AndroidResourceDescription
           public FileVisitResult visitFile(Path file, BasicFileAttributes attr) throws IOException {
             String filename = file.getFileName().toString();
             if (isPossibleResourceName(filename)) {
-              paths.put(MorePaths.relativize(inputDir, file), new PathSourcePath(filesystem, file));
+              paths.put(MorePaths.relativize(inputDir, file), PathSourcePath.of(filesystem, file));
             }
             return FileVisitResult.CONTINUE;
           }
@@ -372,7 +378,8 @@ public class AndroidResourceDescription
       Flavor flavor = flavors.iterator().next();
       if (flavor.equals(RESOURCES_SYMLINK_TREE_FLAVOR)
           || flavor.equals(ASSETS_SYMLINK_TREE_FLAVOR)
-          || flavor.equals(AAPT2_COMPILE_FLAVOR)) {
+          || flavor.equals(AAPT2_COMPILE_FLAVOR)
+          || flavor.equals(ANDROID_RESOURCE_INDEX_FLAVOR)) {
         return true;
       }
     }

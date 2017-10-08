@@ -16,7 +16,7 @@
 
 package com.facebook.buck.apple;
 
-import static com.facebook.buck.cxx.CxxFlavorSanitizer.sanitize;
+import static com.facebook.buck.cxx.toolchain.CxxFlavorSanitizer.sanitize;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertNotNull;
@@ -24,8 +24,8 @@ import static org.junit.Assert.assertNotNull;
 import com.facebook.buck.cxx.CxxCompilationDatabaseEntry;
 import com.facebook.buck.cxx.CxxCompilationDatabaseUtils;
 import com.facebook.buck.cxx.CxxDescriptionEnhancer;
-import com.facebook.buck.cxx.CxxPlatformUtils;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.BuildTargets;
@@ -38,7 +38,6 @@ import com.facebook.buck.util.RichStream;
 import com.facebook.buck.util.environment.Platform;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,9 +87,6 @@ public class CompilationDatabaseIntegrationTest {
     Map<String, CxxCompilationDatabaseEntry> fileToEntry =
         CxxCompilationDatabaseUtils.parseCompilationDatabaseJsonFile(compilationDatabase);
 
-    ImmutableSet<String> frameworks =
-        ImmutableSet.of(
-            Paths.get("/System/Library/Frameworks/Foundation.framework").getParent().toString());
     String pathToPrivateHeaders =
         BuildTargets.getGenPath(
                 filesystem,
@@ -123,7 +119,6 @@ public class CompilationDatabaseIntegrationTest {
         Paths.get("EXExample/EXExampleModel.m.o"),
         /* isLibrary */ true,
         fileToEntry,
-        frameworks,
         includes);
     assertFlags(
         filesystem,
@@ -134,7 +129,6 @@ public class CompilationDatabaseIntegrationTest {
         Paths.get("EXExample/EXUser.mm.o"),
         /* isLibrary */ true,
         fileToEntry,
-        frameworks,
         includes);
     assertFlags(
         filesystem,
@@ -146,7 +140,6 @@ public class CompilationDatabaseIntegrationTest {
         Paths.get("EXExample/Categories/NSString+Palindrome.m.o"),
         /* isLibrary */ true,
         fileToEntry,
-        frameworks,
         includes);
   }
 
@@ -164,10 +157,6 @@ public class CompilationDatabaseIntegrationTest {
     Map<String, CxxCompilationDatabaseEntry> fileToEntry =
         CxxCompilationDatabaseUtils.parseCompilationDatabaseJsonFile(compilationDatabase);
 
-    ImmutableSet<String> frameworks =
-        ImmutableSet.of(
-            Paths.get("/System/Library/Frameworks/Foundation.framework").getParent().toString(),
-            Paths.get("/System/Library/Frameworks/UIKit.framework").getParent().toString());
     String pathToPrivateHeaders =
         BuildTargets.getGenPath(
                 filesystem,
@@ -201,7 +190,6 @@ public class CompilationDatabaseIntegrationTest {
         Paths.get("Weather/EXViewController.m.o"),
         /* isLibrary */ false,
         fileToEntry,
-        frameworks,
         includes);
     assertFlags(
         filesystem,
@@ -212,7 +200,6 @@ public class CompilationDatabaseIntegrationTest {
         Paths.get("Weather/main.m.o"),
         /* isLibrary */ false,
         fileToEntry,
-        frameworks,
         includes);
   }
 
@@ -223,7 +210,6 @@ public class CompilationDatabaseIntegrationTest {
       Path outputPath,
       boolean isLibrary,
       Map<String, CxxCompilationDatabaseEntry> fileToEntry,
-      ImmutableSet<String> additionalFrameworks,
       Iterable<String> includes)
       throws IOException {
     Path tmpRoot = tmp.getRoot().toRealPath();
@@ -258,6 +244,8 @@ public class CompilationDatabaseIntegrationTest {
 
     List<String> commandArgs = new ArrayList<>();
     commandArgs.add(clang);
+    commandArgs.add("-x");
+    commandArgs.add(language);
     if (isLibrary) {
       commandArgs.add("-fPIC");
       commandArgs.add("-fPIC");
@@ -276,19 +264,12 @@ public class CompilationDatabaseIntegrationTest {
       commandArgs.add(include);
     }
 
-    for (String framework : additionalFrameworks) {
-      commandArgs.add("-F");
-      commandArgs.add(sdkRoot + framework);
-    }
-
     String output =
         BuildTargets.getGenPath(filesystem, outputTarget, "%s").resolve(outputPath).toString();
     commandArgs.add("-Xclang");
     commandArgs.add("-fdebug-compilation-dir");
     commandArgs.add("-Xclang");
     commandArgs.add("." + Strings.repeat("/", 399));
-    commandArgs.add("-x");
-    commandArgs.add(language);
     commandArgs.add("-c");
     commandArgs.add("-MD");
     commandArgs.add("-MF");

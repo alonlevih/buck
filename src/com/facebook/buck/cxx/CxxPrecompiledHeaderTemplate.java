@@ -16,17 +16,15 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.cxx.platform.NativeLinkables;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.InternalFlavor;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -95,11 +93,12 @@ public class CxxPrecompiledHeaderTemplate extends NoopBuildRuleWithDeclaredAndEx
   }
 
   /**
-   * Pick a linkage, any linkage. Just pick your favorite. This will be overridden by config anyway.
+   * Linkage doesn't matter for PCHs, but use care not to change it from the rest of the builds'
+   * rules' preferred linkage.
    */
   @Override
   public Linkage getPreferredLinkage(CxxPlatform cxxPlatform) {
-    return Linkage.SHARED;
+    return Linkage.ANY;
   }
 
   /** Doesn't really apply to us. No shared libraries to add here. */
@@ -110,21 +109,18 @@ public class CxxPrecompiledHeaderTemplate extends NoopBuildRuleWithDeclaredAndEx
 
   /**
    * This class doesn't add any native linkable code of its own, it just has deps which need to be
-   * passed along and up to the top-level (e.g. a `cxx_binary`) rule. Take all our linkable deps,
-   * then, and pass it along as our linker input.
+   * passed along (see {@link #getNativeLinkableDeps()} and {@link #getNativeLinkableExportedDeps()}
+   * for the handling of those linkables).
+   *
+   * @return empty {@link NativeLinkableInput}
    */
   @Override
   public NativeLinkableInput getNativeLinkableInput(
       CxxPlatform cxxPlatform,
       Linker.LinkableDepType type,
       boolean forceLinkWhole,
-      ImmutableSet<NativeLinkable.LanguageExtensions> languageExtensions)
-      throws NoSuchBuildTargetException {
-    return NativeLinkables.getTransitiveNativeLinkableInput(
-        cxxPlatform,
-        getBuildDeps(),
-        Linker.LinkableDepType.SHARED,
-        NativeLinkable.class::isInstance);
+      ImmutableSet<LanguageExtensions> languageExtensions) {
+    return NativeLinkableInput.of();
   }
 
   @Override
@@ -133,8 +129,7 @@ public class CxxPrecompiledHeaderTemplate extends NoopBuildRuleWithDeclaredAndEx
   }
 
   @Override
-  public CxxPreprocessorInput getCxxPreprocessorInput(CxxPlatform cxxPlatform)
-      throws NoSuchBuildTargetException {
+  public CxxPreprocessorInput getCxxPreprocessorInput(CxxPlatform cxxPlatform) {
     return CxxPreprocessorInput.EMPTY;
   }
 
@@ -144,19 +139,15 @@ public class CxxPrecompiledHeaderTemplate extends NoopBuildRuleWithDeclaredAndEx
 
   @Override
   public ImmutableMap<BuildTarget, CxxPreprocessorInput> getTransitiveCxxPreprocessorInput(
-      CxxPlatform cxxPlatform) throws NoSuchBuildTargetException {
+      CxxPlatform cxxPlatform) {
     return transitiveCxxPreprocessorInputCache.getUnchecked(cxxPlatform);
   }
 
   private ImmutableList<CxxPreprocessorInput> getCxxPreprocessorInputs(CxxPlatform cxxPlatform) {
     ImmutableList.Builder<CxxPreprocessorInput> builder = ImmutableList.builder();
-    try {
-      for (Map.Entry<BuildTarget, CxxPreprocessorInput> entry :
-          getTransitiveCxxPreprocessorInput(cxxPlatform).entrySet()) {
-        builder.add(entry.getValue());
-      }
-    } catch (NoSuchBuildTargetException e) {
-      throw new RuntimeException(e);
+    for (Map.Entry<BuildTarget, CxxPreprocessorInput> entry :
+        getTransitiveCxxPreprocessorInput(cxxPlatform).entrySet()) {
+      builder.add(entry.getValue());
     }
     return builder.build();
   }
@@ -201,21 +192,14 @@ public class CxxPrecompiledHeaderTemplate extends NoopBuildRuleWithDeclaredAndEx
 
   public DependencyAggregation requireAggregatedDepsRule(
       BuildRuleResolver ruleResolver, SourcePathRuleFinder ruleFinder, CxxPlatform cxxPlatform) {
-    BuildTarget depAggTarget = createAggregatedDepsTarget(cxxPlatform);
-
-    Optional<DependencyAggregation> existingRule =
-        ruleResolver.getRuleOptionalWithType(depAggTarget, DependencyAggregation.class);
-    if (existingRule.isPresent()) {
-      return existingRule.get();
-    }
-
-    DependencyAggregation depAgg =
-        new DependencyAggregation(
-            depAggTarget,
-            getProjectFilesystem(),
-            getPreprocessDeps(ruleResolver, ruleFinder, cxxPlatform));
-    ruleResolver.addToIndex(depAgg);
-    return depAgg;
+    return (DependencyAggregation)
+        ruleResolver.computeIfAbsent(
+            createAggregatedDepsTarget(cxxPlatform),
+            depAggTarget ->
+                new DependencyAggregation(
+                    depAggTarget,
+                    getProjectFilesystem(),
+                    getPreprocessDeps(ruleResolver, ruleFinder, cxxPlatform)));
   }
 
   public PreprocessorDelegate buildPreprocessorDelegate(

@@ -25,9 +25,10 @@ import com.facebook.buck.apple.XcodeWorkspaceConfigDescription;
 import com.facebook.buck.apple.XcodeWorkspaceConfigDescriptionArg;
 import com.facebook.buck.apple.xcode.XCScheme;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXTarget;
-import com.facebook.buck.cxx.CxxBuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.event.BuckEventBus;
+import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.graph.TopologicalSort;
 import com.facebook.buck.halide.HalideBuckConfig;
 import com.facebook.buck.log.Logger;
@@ -42,17 +43,20 @@ import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.swift.SwiftBuckConfig;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.MoreCollectors;
+import com.facebook.buck.util.ObjectMappers;
 import com.facebook.buck.util.Optionals;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.ImmutableSortedMap;
+import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Futures;
@@ -70,14 +74,13 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
 
-// import com.facebook.buck.io.ProjectFilesystem;
-
 public class WorkspaceAndProjectGenerator {
   private static final Logger LOG = Logger.get(WorkspaceAndProjectGenerator.class);
 
   private final Cell rootCell;
   private final TargetGraph projectGraph;
   private final AppleDependenciesCache dependenciesCache;
+  private final ProjectGenerationStateCache projGenerationStateCache;
   private final XcodeWorkspaceConfigDescriptionArg workspaceArguments;
   private final BuildTarget workspaceBuildTarget;
   private final FocusedModuleTargetMatcher focusModules;
@@ -94,6 +97,10 @@ public class WorkspaceAndProjectGenerator {
 
   private final ImmutableSet.Builder<BuildTarget> requiredBuildTargetsBuilder =
       ImmutableSet.builder();
+  private final ImmutableSortedSet.Builder<Path> xcconfigPathsBuilder =
+      ImmutableSortedSet.naturalOrder();
+  private final ImmutableList.Builder<CopyInXcode> filesToCopyInXcodeBuilder =
+      ImmutableList.builder();
   private final HalideBuckConfig halideBuckConfig;
   private final CxxBuckConfig cxxBuckConfig;
   private final SwiftBuckConfig swiftBuckConfig;
@@ -117,6 +124,7 @@ public class WorkspaceAndProjectGenerator {
     this.rootCell = cell;
     this.projectGraph = projectGraph;
     this.dependenciesCache = new AppleDependenciesCache(projectGraph);
+    this.projGenerationStateCache = new ProjectGenerationStateCache();
     this.workspaceArguments = workspaceArguments;
     this.workspaceBuildTarget = workspaceBuildTarget;
     this.projectGeneratorOptions = ImmutableSet.copyOf(projectGeneratorOptions);
@@ -158,6 +166,14 @@ public class WorkspaceAndProjectGenerator {
 
   public ImmutableSet<BuildTarget> getRequiredBuildTargets() {
     return requiredBuildTargetsBuilder.build();
+  }
+
+  private ImmutableSet<Path> getXcconfigPaths() {
+    return xcconfigPathsBuilder.build();
+  }
+
+  private ImmutableList<CopyInXcode> getFilesToCopyInXcode() {
+    return filesToCopyInXcodeBuilder.build();
   }
 
   public Path generateWorkspaceAndDependentProjects(
@@ -231,6 +247,8 @@ public class WorkspaceAndProjectGenerator {
         buildTargetToPbxTargetMapBuilder,
         targetToProjectPathMapBuilder);
 
+    writeWorkspaceMetaData(outputDirectory, workspaceName);
+
     if (projectGeneratorOptions.contains(
         ProjectGenerator.Option.GENERATE_HEADERS_SYMLINK_TREES_ONLY)) {
       return workspaceGenerator.getWorkspaceDir();
@@ -250,6 +268,30 @@ public class WorkspaceAndProjectGenerator {
 
       return workspaceGenerator.writeWorkspace();
     }
+  }
+
+  private void writeWorkspaceMetaData(Path outputDirectory, String workspaceName)
+      throws IOException {
+    Path path =
+        combinedProject ? outputDirectory : outputDirectory.resolve(workspaceName + ".xcworkspace");
+    rootCell.getFilesystem().mkdirs(path);
+    ImmutableList<String> requiredTargetsStrings =
+        getRequiredBuildTargets()
+            .stream()
+            .map(Object::toString)
+            .collect(MoreCollectors.toImmutableList());
+    ImmutableMap<String, Object> data =
+        ImmutableMap.of(
+            "required-targets",
+            requiredTargetsStrings,
+            "xcconfig-paths",
+            getXcconfigPaths(),
+            "copy-in-xcode",
+            getFilesToCopyInXcode());
+    String jsonString = ObjectMappers.WRITER.writeValueAsString(data);
+    rootCell
+        .getFilesystem()
+        .writeContentsToPath(jsonString, path.resolve("buck-project.meta.json"));
   }
 
   private void generateProjects(
@@ -338,6 +380,8 @@ public class WorkspaceAndProjectGenerator {
                           relativeTargetCell.resolve(result.getProjectPath()),
                           result.isProjectGenerated(),
                           result.getRequiredBuildTargets(),
+                          result.getXcconfigPaths(),
+                          result.getFilesToCopyInXcode(),
                           result.getBuildTargetToGeneratedTargetMap());
                   return result;
                 }));
@@ -367,6 +411,14 @@ public class WorkspaceAndProjectGenerator {
       ImmutableMap.Builder<PBXTarget, Path> targetToProjectPathMapBuilder,
       GenerationResult result) {
     requiredBuildTargetsBuilder.addAll(result.getRequiredBuildTargets());
+    ImmutableSortedSet<Path> relativeXcconfigPaths =
+        result
+            .getXcconfigPaths()
+            .stream()
+            .map((Path p) -> rootCell.getFilesystem().relativize(p))
+            .collect(MoreCollectors.toImmutableSortedSet());
+    xcconfigPathsBuilder.addAll(relativeXcconfigPaths);
+    filesToCopyInXcodeBuilder.addAll(result.getFilesToCopyInXcode());
     buildTargetToPbxTargetMapBuilder.putAll(result.getBuildTargetToGeneratedTargetMap());
     for (PBXTarget target : result.getBuildTargetToGeneratedTargetMap().values()) {
       targetToProjectPathMapBuilder.put(target, result.getProjectPath());
@@ -401,6 +453,7 @@ public class WorkspaceAndProjectGenerator {
             new ProjectGenerator(
                 projectGraph,
                 dependenciesCache,
+                projGenerationStateCache,
                 rules,
                 projectCell,
                 projectDirectory,
@@ -436,6 +489,8 @@ public class WorkspaceAndProjectGenerator {
         generator.getProjectPath(),
         generator.isProjectGenerated(),
         requiredBuildTargets,
+        generator.getXcconfigPaths(),
+        generator.getFilesToCopyInXcode(),
         buildTargetToGeneratedTargetMap);
   }
 
@@ -452,6 +507,7 @@ public class WorkspaceAndProjectGenerator {
         new ProjectGenerator(
             projectGraph,
             dependenciesCache,
+            projGenerationStateCache,
             targetsInRequiredProjects,
             rootCell,
             outputDirectory.getParent(),
@@ -476,6 +532,8 @@ public class WorkspaceAndProjectGenerator {
             generator.getProjectPath(),
             generator.isProjectGenerated(),
             generator.getRequiredBuildTargets(),
+            generator.getXcconfigPaths(),
+            generator.getFilesToCopyInXcode(),
             generator.getBuildTargetToGeneratedTargetMap());
     workspaceGenerator.addFilePath(result.getProjectPath(), Optional.empty());
     processGenerationResult(
@@ -666,10 +724,20 @@ public class WorkspaceAndProjectGenerator {
           if (!(node.getConstructorArg() instanceof HasTests)) {
             continue;
           }
-          for (BuildTarget explicitTestTarget : ((HasTests) node.getConstructorArg()).getTests()) {
-            if (!focusModules.isFocusedOn(explicitTestTarget)) {
-              continue;
-            }
+          ImmutableList<BuildTarget> focusedTests =
+              ((HasTests) node.getConstructorArg())
+                  .getTests()
+                  .stream()
+                  .filter(t -> focusModules.isFocusedOn(t))
+                  .collect(MoreCollectors.toImmutableList());
+          // Show a warning if the target is not focused but the tests are.
+          if (focusedTests.size() > 0 && !focusModules.isFocusedOn(node.getBuildTarget())) {
+            buckEventBus.post(
+                ConsoleEvent.warning(
+                    "Skipping tests of %s since it's not focused", node.getBuildTarget()));
+            continue;
+          }
+          for (BuildTarget explicitTestTarget : focusedTests) {
             Optional<TargetNode<?, ?>> explicitTestNode =
                 targetGraph.getOptional(explicitTestTarget);
             if (explicitTestNode.isPresent()) {
@@ -851,6 +919,7 @@ public class WorkspaceAndProjectGenerator {
               remoteRunnablePath,
               XcodeWorkspaceConfigDescription.getActionConfigNamesFromArg(workspaceArguments),
               targetToProjectPathMap,
+              schemeConfigArg.getEnvironmentVariables(),
               schemeConfigArg.getLaunchStyle().orElse(XCScheme.LaunchAction.LaunchStyle.AUTO));
       schemeGenerator.writeScheme();
       schemeGenerators.put(schemeName, schemeGenerator);

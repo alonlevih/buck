@@ -16,7 +16,8 @@
 
 package com.facebook.buck.jvm.java;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystemFactory;
 import com.facebook.buck.jvm.core.JavaPackageFinder;
 import com.facebook.buck.rules.CellPathResolver;
 import com.facebook.buck.util.ClassLoaderCache;
@@ -47,6 +48,8 @@ abstract class AbstractJavacExecutionContext {
 
   public abstract ProjectFilesystem getProjectFilesystem();
 
+  public abstract ProjectFilesystemFactory getProjectFilesystemFactory();
+
   public abstract ClassUsageFileWriter getUsedClassesFileWriter();
 
   public abstract ImmutableMap<String, String> getEnvironment();
@@ -56,5 +59,5 @@ abstract class AbstractJavacExecutionContext {
   public abstract ImmutableList<Path> getAbsolutePathsForInputs();
 
   /** Setting this to non-absent value enables direct to jar output. */
-  public abstract Optional<DirectToJarOutputSettings> getDirectToJarOutputSettings();
+  public abstract Optional<JarParameters> getDirectToJarParameters();
 }

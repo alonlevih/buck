@@ -19,9 +19,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
-import com.facebook.buck.cxx.platform.GccCompiler;
-import com.facebook.buck.cxx.platform.GccPreprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.GccCompiler;
+import com.facebook.buck.cxx.toolchain.GccPreprocessor;
+import com.facebook.buck.cxx.toolchain.HeaderSymlinkTree;
+import com.facebook.buck.cxx.toolchain.HeaderVisibility;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.BuildTargets;
@@ -35,6 +38,7 @@ import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.HashedFileTool;
 import com.facebook.buck.rules.RuleKeyObjectSink;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -70,7 +74,8 @@ public class CxxCompilationDatabaseTest {
     ProjectFilesystem filesystem = new FakeProjectFilesystem(fakeRoot);
 
     BuildRuleResolver testBuildRuleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(testBuildRuleResolver);
     SourcePathResolver testSourcePathResolver = DefaultSourcePathResolver.from(ruleFinder);
 
@@ -101,9 +106,8 @@ public class CxxCompilationDatabaseTest {
         PreprocessorFlags.builder()
             .addIncludes(
                 CxxHeadersDir.of(
-                    CxxPreprocessables.IncludeType.SYSTEM, new FakeSourcePath("/foo/bar")),
-                CxxHeadersDir.of(
-                    CxxPreprocessables.IncludeType.SYSTEM, new FakeSourcePath("/test")))
+                    CxxPreprocessables.IncludeType.SYSTEM, FakeSourcePath.of("/foo/bar")),
+                CxxHeadersDir.of(CxxPreprocessables.IncludeType.SYSTEM, FakeSourcePath.of("/test")))
             .build();
 
     ImmutableSortedSet.Builder<CxxPreprocessAndCompile> rules = ImmutableSortedSet.naturalOrder();
@@ -142,7 +146,7 @@ public class CxxCompilationDatabaseTest {
                     new GccCompiler(new HashedFileTool(Paths.get("compiler"))),
                     CxxToolFlags.of()),
                 Paths.get("test.o"),
-                new FakeSourcePath(filesystem, "test.cpp"),
+                FakeSourcePath.of(filesystem, "test.cpp"),
                 CxxSource.Type.CXX,
                 Optional.empty(),
                 CxxPlatformUtils.DEFAULT_COMPILER_DEBUG_PATH_SANITIZER,
@@ -181,12 +185,12 @@ public class CxxCompilationDatabaseTest {
                 root + "/test.cpp",
                 ImmutableList.of(
                     "compiler",
+                    "-x",
+                    "c++",
                     "-isystem",
                     "/foo/bar",
                     "-isystem",
                     "/test",
-                    "-x",
-                    "c++",
                     "-c",
                     "-MD",
                     "-MF",

@@ -16,7 +16,7 @@
 
 package com.facebook.buck.rules;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.step.ExecutionContext;
 import com.google.common.base.Preconditions;
 import java.nio.file.Path;
@@ -33,7 +33,7 @@ public class InstallTrigger implements RuleKeyAppendable {
 
   public InstallTrigger(ProjectFilesystem filesystem) {
     this.filesystem = filesystem;
-    this.path = new PathSourcePath(filesystem, getTriggerPath(filesystem));
+    this.path = PathSourcePath.of(filesystem, getTriggerPath(filesystem));
   }
 
   public static Path getTriggerPath(ProjectFilesystem filesystem) {

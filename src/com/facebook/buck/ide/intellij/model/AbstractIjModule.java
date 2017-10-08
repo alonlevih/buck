@@ -19,7 +19,7 @@ package com.facebook.buck.ide.intellij.model;
 import com.facebook.buck.ide.intellij.IjDependencyListBuilder;
 import com.facebook.buck.ide.intellij.Util;
 import com.facebook.buck.ide.intellij.model.folders.IjFolder;
-import com.facebook.buck.io.MorePaths;
+import com.facebook.buck.io.file.MorePaths;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.base.Preconditions;
@@ -64,6 +64,9 @@ abstract class AbstractIjModule implements IjProjectElement {
 
   /** @return a set of classpaths that the module requires to index correctly. */
   public abstract ImmutableSet<Path> getExtraClassPathDependencies();
+
+  /** @return a set of module paths that the module requires to index correctly. */
+  public abstract ImmutableSet<Path> getExtraModuleDependencies();
 
   /** @return Folders which contain the generated source code. */
   public abstract ImmutableList<IjFolder> getGeneratedSourceCodeFolders();

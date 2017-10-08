@@ -16,15 +16,16 @@
 
 package com.facebook.buck.jvm.java.abi;
 
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.zip.JarBuilder;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.util.zip.JarBuilder;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import javax.annotation.processing.Messager;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.util.Elements;
@@ -40,10 +41,15 @@ public class StubJar {
   /**
    * @param targetVersion the class file version to output, expressed as the corresponding Java
    *     source version
+   * @param messager
    */
   public StubJar(
-      SourceVersion targetVersion, Elements elements, Iterable<Element> topLevelElements) {
-    libraryReaderSupplier = () -> LibraryReader.of(targetVersion, elements, topLevelElements);
+      SourceVersion targetVersion,
+      Elements elements,
+      Messager messager,
+      Iterable<Element> topLevelElements) {
+    libraryReaderSupplier =
+        () -> LibraryReader.of(targetVersion, elements, messager, topLevelElements);
   }
 
   /**

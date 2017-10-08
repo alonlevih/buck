@@ -120,6 +120,16 @@ public class ProjectIntegrationTest {
   }
 
   @Test
+  public void testVersion2BuckProjectWithJavaResources() throws InterruptedException, IOException {
+    runBuckProjectAndVerify("project_with_java_resources");
+  }
+
+  public void testVersion2BuckProjectWithExtraOutputModules()
+      throws InterruptedException, IOException {
+    runBuckProjectAndVerify("project_with_extra_output_modules");
+  }
+
+  @Test
   public void testVersion2BuckProjectWithGeneratedSources()
       throws InterruptedException, IOException {
     runBuckProjectAndVerify("project_with_generated_sources");
@@ -278,6 +288,11 @@ public class ProjectIntegrationTest {
   @Test
   public void testScalaProject() throws InterruptedException, IOException {
     runBuckProjectAndVerify("scala_project");
+  }
+
+  @Test
+  public void testIgnoredPathAddedToExcludedFolders() throws InterruptedException, IOException {
+    runBuckProjectAndVerify("ignored_excluded");
   }
 
   private ProcessResult runBuckProjectAndVerify(String folderWithTestData, String... commandArgs)

@@ -19,11 +19,14 @@ package com.facebook.buck.cxx;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.CxxToolProvider;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.cxx.platform.PreprocessorProvider;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.CxxToolProvider;
+import com.facebook.buck.cxx.toolchain.MungingDebugPathSanitizer;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.cxx.toolchain.PreprocessorProvider;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRule;
@@ -31,6 +34,7 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -92,12 +96,13 @@ public class PrecompiledHeaderFeatureTest {
     public void test() {
       final String headerFilename = "foo.h";
       BuildRuleResolver resolver =
-          new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(
+              TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
       CxxPreprocessAndCompile rule =
           preconfiguredSourceRuleFactoryBuilder(resolver)
               .setCxxPlatform(getPlatform())
               .setCxxBuckConfig(buildConfig(pchEnabled))
-              .setPrefixHeader(new FakeSourcePath(headerFilename))
+              .setPrefixHeader(FakeSourcePath.of(headerFilename))
               .setPrecompiledHeader(Optional.empty())
               .build()
               .requirePreprocessAndCompileBuildRule(
@@ -145,7 +150,8 @@ public class PrecompiledHeaderFeatureTest {
     @Test
     public void rejectPchParameterIfSourceTypeDoesntSupportPch() {
       BuildRuleResolver resolver =
-          new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(
+              TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
       CxxPlatform platform =
           PLATFORM_SUPPORTING_PCH.withCompilerDebugPathSanitizer(
               new MungingDebugPathSanitizer(
@@ -154,7 +160,7 @@ public class PrecompiledHeaderFeatureTest {
       CxxSourceRuleFactory factory =
           preconfiguredSourceRuleFactoryBuilder(resolver)
               .setCxxPlatform(platform)
-              .setPrefixHeader(new FakeSourcePath(("foo.pch")))
+              .setPrefixHeader(FakeSourcePath.of(("foo.pch")))
               .setCxxBuckConfig(config)
               .build();
 
@@ -190,7 +196,7 @@ public class PrecompiledHeaderFeatureTest {
       class TestData {
         public CxxPrecompiledHeader generate(Path from) {
           BuildRuleResolver resolver =
-              new BuildRuleResolver(
+              new SingleThreadedBuildRuleResolver(
                   TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
           CxxSourceRuleFactory factory =
               preconfiguredSourceRuleFactoryBuilder(resolver)
@@ -201,7 +207,7 @@ public class PrecompiledHeaderFeatureTest {
                               File.separatorChar,
                               Paths.get("."),
                               ImmutableBiMap.of(from, "melon"))))
-                  .setPrefixHeader(new FakeSourcePath(("foo.pch")))
+                  .setPrefixHeader(FakeSourcePath.of(("foo.pch")))
                   .setCxxBuckConfig(buildConfig(/* pchEnabled */ true))
                   .build();
           BuildRule rule =
@@ -232,14 +238,14 @@ public class PrecompiledHeaderFeatureTest {
       class TestData {
         public CxxPrecompiledHeader generate(Iterable<String> flags) {
           BuildRuleResolver resolver =
-              new BuildRuleResolver(
+              new SingleThreadedBuildRuleResolver(
                   TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
           CxxSourceRuleFactory factory =
               preconfiguredSourceRuleFactoryBuilder(resolver)
                   .setCxxPlatform(PLATFORM_SUPPORTING_PCH)
                   .setCxxBuckConfig(buildConfig(/* pchEnabled */ true))
                   .putAllCompilerFlags(CxxSource.Type.C_CPP_OUTPUT, StringArg.from(flags))
-                  .setPrefixHeader(new FakeSourcePath(("foo.h")))
+                  .setPrefixHeader(FakeSourcePath.of(("foo.h")))
                   .build();
           BuildRule rule =
               factory.requirePreprocessAndCompileBuildRule(
@@ -267,7 +273,7 @@ public class PrecompiledHeaderFeatureTest {
       class TestData {
         public CxxPrecompiledHeader generate(String flags) {
           BuildRuleResolver resolver =
-              new BuildRuleResolver(
+              new SingleThreadedBuildRuleResolver(
                   TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
           CxxSourceRuleFactory factory =
               preconfiguredSourceRuleFactoryBuilder(resolver)
@@ -279,7 +285,7 @@ public class PrecompiledHeaderFeatureTest {
                               .setPreprocessorFlags(
                                   ImmutableMultimap.of(CxxSource.Type.C, StringArg.of(flags)))
                               .build()))
-                  .setPrefixHeader(new FakeSourcePath(("foo.h")))
+                  .setPrefixHeader(FakeSourcePath.of(("foo.h")))
                   .build();
           BuildRule rule =
               factory.requirePreprocessAndCompileBuildRule(
@@ -412,7 +418,7 @@ public class PrecompiledHeaderFeatureTest {
 
   /** Configures a CxxSource.Builder representing a C source file. */
   private static CxxSource.Builder preconfiguredCxxSourceBuilder() {
-    return CxxSource.builder().setType(CxxSource.Type.C).setPath(new FakeSourcePath("foo.c"));
+    return CxxSource.builder().setType(CxxSource.Type.C).setPath(FakeSourcePath.of("foo.c"));
   }
 
   private static CxxBuckConfig buildConfig(boolean pchEnabled) {

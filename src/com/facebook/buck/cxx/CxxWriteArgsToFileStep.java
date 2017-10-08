@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.MoreFiles;
+import com.facebook.buck.io.file.MoreFiles;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.args.Arg;
 import com.facebook.buck.rules.args.FileListableLinkerInputArg;
@@ -25,6 +25,7 @@ import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.Step;
 import com.facebook.buck.step.StepExecutionResult;
 import com.facebook.buck.util.MoreCollectors;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
@@ -37,7 +38,7 @@ import java.util.Optional;
  * This step takes a list of args, stringify, escape them (if escaper is present), and finally store
  * to a file {@link #argFilePath}.
  */
-public class CxxWriteArgsToFileStep implements Step {
+class CxxWriteArgsToFileStep implements Step {
 
   private final Path argFilePath;
   private final ImmutableList<String> argFileContents;
@@ -62,6 +63,11 @@ public class CxxWriteArgsToFileStep implements Step {
   private CxxWriteArgsToFileStep(Path argFilePath, ImmutableList<String> argFileContents) {
     this.argFilePath = argFilePath;
     this.argFileContents = argFileContents;
+  }
+
+  @VisibleForTesting
+  ImmutableList<String> getArgFileContents() {
+    return argFileContents;
   }
 
   static ImmutableList<String> stringify(

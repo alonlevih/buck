@@ -25,6 +25,7 @@ import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetNode;
 import com.facebook.buck.testutil.TargetGraphFactory;
@@ -39,18 +40,19 @@ public class JarShapeTest {
   public void shouldOnlyIncludeGivenJarInASingleJar() throws NoSuchBuildTargetException {
     TargetNode<?, ?> depNode =
         JavaLibraryBuilder.createBuilder("//:dep")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .build();
 
     TargetNode<?, ?> libNode =
         JavaLibraryBuilder.createBuilder("//:lib")
-            .addSrc(new FakeSourcePath("Library.java"))
+            .addSrc(FakeSourcePath.of("Library.java"))
             .addDep(depNode.getBuildTarget())
             .build();
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depNode, libNode);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule dep = resolver.requireRule(depNode.getBuildTarget());
     BuildRule lib = resolver.requireRule(libNode.getBuildTarget());
@@ -66,18 +68,19 @@ public class JarShapeTest {
   public void aMavenJarWithoutMavenTransitiveDepsIsAnUberJar() throws NoSuchBuildTargetException {
     TargetNode<?, ?> depNode =
         JavaLibraryBuilder.createBuilder("//:dep")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .build();
 
     TargetNode<?, ?> libNode =
         JavaLibraryBuilder.createBuilder("//:lib")
-            .addSrc(new FakeSourcePath("Library.java"))
+            .addSrc(FakeSourcePath.of("Library.java"))
             .addDep(depNode.getBuildTarget())
             .build();
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depNode, libNode);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule dep = resolver.requireRule(depNode.getBuildTarget());
     BuildRule lib = resolver.requireRule(libNode.getBuildTarget());
@@ -93,25 +96,26 @@ public class JarShapeTest {
   public void shouldBeAbleToCreateAMavenJar() throws NoSuchBuildTargetException {
     TargetNode<?, ?> depNode =
         JavaLibraryBuilder.createBuilder("//:dep")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .build();
 
     TargetNode<?, ?> mavenDepNode =
         JavaLibraryBuilder.createBuilder("//:maven-dep")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .setMavenCoords("com.example:somelib:1.0")
             .build();
 
     TargetNode<?, ?> libNode =
         JavaLibraryBuilder.createBuilder("//:lib")
-            .addSrc(new FakeSourcePath("Library.java"))
+            .addSrc(FakeSourcePath.of("Library.java"))
             .addDep(depNode.getBuildTarget())
             .addDep(mavenDepNode.getBuildTarget())
             .build();
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depNode, mavenDepNode, libNode);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule dep = resolver.requireRule(depNode.getBuildTarget());
     BuildRule mavenDep = resolver.requireRule(mavenDepNode.getBuildTarget());
@@ -129,20 +133,20 @@ public class JarShapeTest {
       throws NoSuchBuildTargetException {
     TargetNode<?, ?> deepMavenDepNode =
         JavaLibraryBuilder.createBuilder("//:deep-maven")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .setMavenCoords("com.example:cheese:2.0")
             .build();
 
     TargetNode<?, ?> mavenDepNode =
         JavaLibraryBuilder.createBuilder("//:maven-dep")
-            .addSrc(new FakeSourcePath("SomeFile.java"))
+            .addSrc(FakeSourcePath.of("SomeFile.java"))
             .setMavenCoords("com.example:somelib:1.0")
             .addDep(deepMavenDepNode.getBuildTarget())
             .build();
 
     TargetNode<?, ?> libNode =
         JavaLibraryBuilder.createBuilder("//:lib")
-            .addSrc(new FakeSourcePath("Library.java"))
+            .addSrc(FakeSourcePath.of("Library.java"))
             .addDep(deepMavenDepNode.getBuildTarget())
             .addDep(mavenDepNode.getBuildTarget())
             .build();
@@ -150,7 +154,8 @@ public class JarShapeTest {
     TargetGraph targetGraph =
         TargetGraphFactory.newInstance(deepMavenDepNode, mavenDepNode, libNode);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     BuildRule deepMavenDep = resolver.requireRule(deepMavenDepNode.getBuildTarget());
     BuildRule mavenDep = resolver.requireRule(mavenDepNode.getBuildTarget());

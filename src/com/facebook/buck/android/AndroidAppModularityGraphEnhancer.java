@@ -16,8 +16,10 @@
 
 package com.facebook.buck.android;
 
+import com.facebook.buck.android.apkmodule.APKModuleGraph;
+import com.facebook.buck.android.packageable.AndroidPackageableCollection;
+import com.facebook.buck.android.packageable.AndroidPackageableCollector;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -51,8 +53,7 @@ public class AndroidAppModularityGraphEnhancer {
     this.apkModuleGraph = apkModuleGraph;
   }
 
-  AndroidAppModularityGraphEnhancementResult createAdditionalBuildables()
-      throws NoSuchBuildTargetException {
+  AndroidAppModularityGraphEnhancementResult createAdditionalBuildables() {
 
     ImmutableSortedSet.Builder<BuildRule> enhancedDeps = ImmutableSortedSet.naturalOrder();
     enhancedDeps.addAll(originalDeps);

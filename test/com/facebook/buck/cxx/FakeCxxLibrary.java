@@ -16,15 +16,14 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.android.AndroidPackageable;
-import com.facebook.buck.android.AndroidPackageableCollector;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.android.packageable.AndroidPackageable;
+import com.facebook.buck.android.packageable.AndroidPackageableCollector;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.DefaultBuildTargetSourcePath;
@@ -96,9 +95,9 @@ public final class FakeCxxLibrary extends NoopBuildRuleWithDeclaredAndExtraDeps
             CxxSymlinkTreeHeaders.builder()
                 .setIncludeType(CxxPreprocessables.IncludeType.LOCAL)
                 .putNameToPathMap(
-                    Paths.get("header.h"), new DefaultBuildTargetSourcePath(publicHeaderTarget))
+                    Paths.get("header.h"), DefaultBuildTargetSourcePath.of(publicHeaderTarget))
                 .setBuildTarget(publicHeaderSymlinkTreeTarget)
-                .setRoot(new DefaultBuildTargetSourcePath(publicHeaderSymlinkTreeTarget))
+                .setRoot(DefaultBuildTargetSourcePath.of(publicHeaderSymlinkTreeTarget))
                 .build())
         .build();
   }
@@ -110,16 +109,16 @@ public final class FakeCxxLibrary extends NoopBuildRuleWithDeclaredAndExtraDeps
             CxxSymlinkTreeHeaders.builder()
                 .setBuildTarget(privateHeaderSymlinkTreeTarget)
                 .setIncludeType(CxxPreprocessables.IncludeType.LOCAL)
-                .setRoot(new DefaultBuildTargetSourcePath(privateHeaderSymlinkTreeTarget))
+                .setRoot(DefaultBuildTargetSourcePath.of(privateHeaderSymlinkTreeTarget))
                 .putNameToPathMap(
-                    Paths.get("header.h"), new DefaultBuildTargetSourcePath(privateHeaderTarget))
+                    Paths.get("header.h"), DefaultBuildTargetSourcePath.of(privateHeaderTarget))
                 .build())
         .build();
   }
 
   @Override
   public ImmutableMap<BuildTarget, CxxPreprocessorInput> getTransitiveCxxPreprocessorInput(
-      CxxPlatform cxxPlatform) throws NoSuchBuildTargetException {
+      CxxPlatform cxxPlatform) {
     return transitiveCxxPreprocessorInputCache.getUnchecked(cxxPlatform);
   }
 
@@ -166,7 +165,7 @@ public final class FakeCxxLibrary extends NoopBuildRuleWithDeclaredAndExtraDeps
   @Override
   public ImmutableMap<String, SourcePath> getSharedLibraries(CxxPlatform cxxPlatform) {
     return ImmutableMap.of(
-        sharedLibrarySoname, new PathSourcePath(getProjectFilesystem(), sharedLibraryOutput));
+        sharedLibrarySoname, PathSourcePath.of(getProjectFilesystem(), sharedLibraryOutput));
   }
 
   @Override

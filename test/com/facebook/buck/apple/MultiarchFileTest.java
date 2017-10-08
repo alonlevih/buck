@@ -27,7 +27,7 @@ import static org.junit.Assume.assumeTrue;
 
 import com.facebook.buck.cxx.CxxCompilationDatabase;
 import com.facebook.buck.cxx.CxxInferEnhancer;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.Flavor;
@@ -42,6 +42,7 @@ import com.facebook.buck.rules.Description;
 import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.SourceWithFlags;
@@ -85,7 +86,7 @@ public class MultiarchFileTest {
                     AppleLibraryBuilder.createBuilder(
                             target.withAppendedFlavors(InternalFlavor.of("static")))
                         .setSrcs(
-                            ImmutableSortedSet.of(SourceWithFlags.of(new FakeSourcePath("foo.c"))))
+                            ImmutableSortedSet.of(SourceWithFlags.of(FakeSourcePath.of("foo.c"))))
           },
           {
             "AppleLibraryDescription (shared)",
@@ -95,7 +96,7 @@ public class MultiarchFileTest {
                     AppleLibraryBuilder.createBuilder(
                             target.withAppendedFlavors(InternalFlavor.of("shared")))
                         .setSrcs(
-                            ImmutableSortedSet.of(SourceWithFlags.of(new FakeSourcePath("foo.c"))))
+                            ImmutableSortedSet.of(SourceWithFlags.of(FakeSourcePath.of("foo.c"))))
           },
         });
   }
@@ -131,7 +132,7 @@ public class MultiarchFileTest {
     BuildTarget sandboxTarget =
         BuildTargetFactory.newInstance("//foo:thing#iphoneos-i386,iphoneos-x86_64,sandbox");
     BuildRuleResolver resolver =
-        new BuildRuleResolver(
+        new SingleThreadedBuildRuleResolver(
             TargetGraphFactory.newInstance(new AppleLibraryBuilder(sandboxTarget).build()),
             new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
@@ -163,7 +164,8 @@ public class MultiarchFileTest {
   @Test
   public void descriptionWithMultipleDifferentSdksShouldFail() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     HumanReadableException exception = null;
     try {
       nodeBuilderFactory
@@ -183,7 +185,8 @@ public class MultiarchFileTest {
   @Test
   public void ruleWithSpecialBuildActionShouldFail() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     HumanReadableException exception = null;
     Iterable<Flavor> forbiddenFlavors =
         ImmutableList.<Flavor>builder()

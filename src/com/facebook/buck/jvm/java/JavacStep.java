@@ -18,7 +18,7 @@ package com.facebook.buck.jvm.java;
 
 import com.facebook.buck.event.CompilerErrorEvent;
 import com.facebook.buck.event.ConsoleEvent;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.message_ipc.Connection;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.SourcePathResolver;
@@ -38,6 +38,7 @@ import com.google.common.collect.ImmutableSortedSet;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -46,21 +47,11 @@ import javax.annotation.Nullable;
 /** Command used to compile java libraries with a variety of ways to handle dependencies. */
 public class JavacStep implements Step {
 
-  private final Path outputDirectory;
+  private final CompilerParameters compilerParameters;
 
   private final ClassUsageFileWriter usedClassesFileWriter;
 
-  private final Optional<Path> generatedCodeDirectory;
-
-  private final Optional<Path> workingDirectory;
-
-  private final ImmutableSortedSet<Path> javaSourceFilePaths;
-
-  private final Path pathToSrcsList;
-
   private final JavacOptions javacOptions;
-
-  private final ImmutableSortedSet<Path> declaredClasspathEntries;
 
   private final BuildTarget invokingRule;
 
@@ -72,40 +63,30 @@ public class JavacStep implements Step {
 
   private final ClasspathChecker classpathChecker;
 
-  private final Optional<DirectToJarOutputSettings> directToJarOutputSettings;
+  private final Optional<JarParameters> jarParameters;
 
   @Nullable private final Path abiJar;
 
   public JavacStep(
-      Path outputDirectory,
       ClassUsageFileWriter usedClassesFileWriter,
-      Optional<Path> generatedCodeDirectory,
-      Optional<Path> workingDirectory,
-      ImmutableSortedSet<Path> javaSourceFilePaths,
-      Path pathToSrcsList,
-      ImmutableSortedSet<Path> declaredClasspathEntries,
       Javac javac,
       JavacOptions javacOptions,
       BuildTarget invokingRule,
       SourcePathResolver resolver,
       ProjectFilesystem filesystem,
       ClasspathChecker classpathChecker,
-      Optional<DirectToJarOutputSettings> directToJarOutputSettings,
+      CompilerParameters compilerParameters,
+      Optional<JarParameters> jarParameters,
       @Nullable Path abiJar) {
-    this.outputDirectory = outputDirectory;
     this.usedClassesFileWriter = usedClassesFileWriter;
-    this.generatedCodeDirectory = generatedCodeDirectory;
-    this.workingDirectory = workingDirectory;
-    this.javaSourceFilePaths = javaSourceFilePaths;
-    this.pathToSrcsList = pathToSrcsList;
     this.javacOptions = javacOptions;
-    this.declaredClasspathEntries = declaredClasspathEntries;
     this.javac = javac;
     this.invokingRule = invokingRule;
     this.resolver = resolver;
     this.filesystem = filesystem;
     this.classpathChecker = classpathChecker;
-    this.directToJarOutputSettings = directToJarOutputSettings;
+    this.compilerParameters = compilerParameters;
+    this.jarParameters = jarParameters;
     this.abiJar = abiJar;
   }
 
@@ -132,11 +113,12 @@ public class JavacStep implements Step {
               firstOrderContext.getCellPathResolver(),
               firstOrderContext.getJavaPackageFinder(),
               filesystem,
+              context.getProjectFilesystemFactory(),
               usedClassesFileWriter,
               firstOrderContext.getEnvironment(),
               firstOrderContext.getProcessExecutor(),
               getAbsolutePathsForJavacInputs(getJavac()),
-              directToJarOutputSettings);
+              jarParameters);
       ImmutableList<JavacPluginJsr199Fields> pluginFields =
           ImmutableList.copyOf(
               javacOptions
@@ -154,12 +136,13 @@ public class JavacStep implements Step {
               .newBuildInvocation(
                   javacExecutionContext,
                   invokingRule,
-                  getOptions(context, declaredClasspathEntries),
+                  getOptions(context, compilerParameters.getClasspathEntries()),
                   pluginFields,
-                  javaSourceFilePaths,
-                  pathToSrcsList,
-                  workingDirectory,
-                  javacOptions.getCompilationMode())) {
+                  compilerParameters.getSourceFilePaths(),
+                  compilerParameters.getPathToSourcesList(),
+                  compilerParameters.getWorkingDirectory(),
+                  compilerParameters.getAbiGenerationMode(),
+                  compilerParameters.getSourceOnlyAbiRuleInfo())) {
         if (abiJar != null) {
           declaredDepsBuildResult =
               invocation.buildSourceAbiJar(
@@ -214,19 +197,21 @@ public class JavacStep implements Step {
     String description =
         getJavac()
             .getDescription(
-                getOptions(context, getClasspathEntries()), javaSourceFilePaths, pathToSrcsList);
+                getOptions(context, getClasspathEntries()),
+                compilerParameters.getSourceFilePaths(),
+                compilerParameters.getPathToSourcesList());
 
-    if (directToJarOutputSettings.isPresent()) {
-      DirectToJarOutputSettings directToJarOutputSettings = this.directToJarOutputSettings.get();
-      Optional<Path> manifestFile = directToJarOutputSettings.getManifestFile();
-      ImmutableSortedSet<Path> entriesToJar = directToJarOutputSettings.getEntriesToJar();
+    if (jarParameters.isPresent()) {
+      JarParameters jarParameters = this.jarParameters.get();
+      Optional<Path> manifestFile = jarParameters.getManifestFile();
+      ImmutableSortedSet<Path> entriesToJar = jarParameters.getEntriesToJar();
       description =
           description
               + "; "
               + String.format(
                   "jar %s %s %s %s",
                   manifestFile.isPresent() ? "cfm" : "cf",
-                  directToJarOutputSettings.getDirectToJarOutputPath(),
+                  jarParameters.getJarPath(),
                   manifestFile.isPresent() ? manifestFile.get() : "",
                   Joiner.on(' ').join(entriesToJar));
     }
@@ -238,8 +223,8 @@ public class JavacStep implements Step {
   public String getShortName() {
     String name;
     if (abiJar != null) {
-      name = "calculate_abi_from_source";
-    } else if (directToJarOutputSettings.isPresent()) {
+      name = "source_abi";
+    } else if (jarParameters.isPresent()) {
       name = "javac_jar";
     } else {
       name = getJavac().getShortName();
@@ -266,8 +251,8 @@ public class JavacStep implements Step {
         javacOptions,
         filesystem,
         resolver,
-        outputDirectory,
-        generatedCodeDirectory,
+        compilerParameters.getOutputDirectory(),
+        compilerParameters.getGeneratedCodeDirectory(),
         context,
         buildClasspathEntries);
   }
@@ -277,7 +262,7 @@ public class JavacStep implements Step {
       ProjectFilesystem filesystem,
       SourcePathResolver pathResolver,
       Path outputDirectory,
-      Optional<Path> generatedCodeDirectory,
+      Path generatedCodeDirectory,
       ExecutionContext context,
       ImmutableSortedSet<Path> buildClasspathEntries) {
     final ImmutableList.Builder<String> builder = ImmutableList.builder();
@@ -286,7 +271,16 @@ public class JavacStep implements Step {
         new OptionsConsumer() {
           @Override
           public void addOptionValue(String option, String value) {
-            builder.add("-" + option).add(value);
+            if (option.equals("bootclasspath")) {
+              builder
+                  .add("-bootclasspath")
+                  .add(
+                      Arrays.stream(value.split(File.pathSeparator))
+                          .map(path -> filesystem.resolve(path).toString())
+                          .collect(Collectors.joining(File.pathSeparator)));
+            } else {
+              builder.add("-" + option).add(value);
+            }
           }
 
           @Override
@@ -310,8 +304,8 @@ public class JavacStep implements Step {
     // Specify the output directory.
     builder.add("-d").add(filesystem.resolve(outputDirectory).toString());
 
-    if (generatedCodeDirectory.isPresent()) {
-      builder.add("-s").add(filesystem.resolve(generatedCodeDirectory.get()).toString());
+    if (!javacOptions.getAnnotationProcessingParams().isEmpty()) {
+      builder.add("-s").add(filesystem.resolve(generatedCodeDirectory).toString());
     }
 
     // Build up and set the classpath.
@@ -328,11 +322,11 @@ public class JavacStep implements Step {
   /** @return The classpath entries used to invoke javac. */
   @VisibleForTesting
   ImmutableSortedSet<Path> getClasspathEntries() {
-    return declaredClasspathEntries;
+    return compilerParameters.getClasspathEntries();
   }
 
   @VisibleForTesting
   ImmutableSortedSet<Path> getSrcs() {
-    return javaSourceFilePaths;
+    return compilerParameters.getSourceFilePaths();
   }
 }

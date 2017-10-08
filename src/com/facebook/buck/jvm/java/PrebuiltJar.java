@@ -16,12 +16,12 @@
 
 package com.facebook.buck.jvm.java;
 
-import com.facebook.buck.android.AndroidPackageable;
-import com.facebook.buck.android.AndroidPackageableCollector;
+import com.facebook.buck.android.packageable.AndroidPackageable;
+import com.facebook.buck.android.packageable.AndroidPackageableCollector;
 import com.facebook.buck.event.ConsoleEvent;
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRuleWithDeclaredAndExtraDeps;
@@ -63,6 +63,7 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
         HasClasspathEntries,
         InitializableFromDisk<JavaLibrary.Data>,
         JavaLibrary,
+        MaybeRequiredForSourceOnlyAbi,
         SupportsInputBasedRuleKey {
 
   @AddToRuleKey private final SourcePath binaryJar;
@@ -77,6 +78,7 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
   @AddToRuleKey private final Optional<String> javadocUrl;
   @AddToRuleKey private final Optional<String> mavenCoords;
   @AddToRuleKey private final boolean provided;
+  @AddToRuleKey private final boolean requiredForSourceOnlyAbi;
   private final Supplier<ImmutableSet<SourcePath>> transitiveClasspathsSupplier;
   private final Supplier<ImmutableSet<JavaLibrary>> transitiveClasspathDepsSupplier;
 
@@ -92,7 +94,8 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
       Optional<SourcePath> gwtJar,
       Optional<String> javadocUrl,
       Optional<String> mavenCoords,
-      final boolean provided) {
+      final boolean provided,
+      final boolean requiredForSourceOnlyAbi) {
     super(buildTarget, projectFilesystem, params);
     this.binaryJar = binaryJar;
     this.sourceJar = sourceJar;
@@ -100,6 +103,7 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
     this.javadocUrl = javadocUrl;
     this.mavenCoords = mavenCoords;
     this.provided = provided;
+    this.requiredForSourceOnlyAbi = requiredForSourceOnlyAbi;
 
     transitiveClasspathsSupplier =
         Suppliers.memoize(
@@ -131,6 +135,11 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
     this.binaryJarContentsSupplier = new JarContentsSupplier(resolver, getSourcePathToOutput());
 
     buildOutputInitializer = new BuildOutputInitializer<>(buildTarget, this);
+  }
+
+  @Override
+  public boolean getRequiredForSourceOnlyAbi() {
+    return requiredForSourceOnlyAbi;
   }
 
   public Optional<SourcePath> getSourceJar() {
@@ -291,12 +300,17 @@ public class PrebuiltJar extends AbstractBuildRuleWithDeclaredAndExtraDeps
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), copiedBinaryJar);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), copiedBinaryJar);
   }
 
   @Override
   public ImmutableSortedSet<SourcePath> getJarContents() {
     return binaryJarContentsSupplier.get();
+  }
+
+  @Override
+  public boolean jarContains(String path) {
+    return binaryJarContentsSupplier.jarContains(path);
   }
 
   @Override

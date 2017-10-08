@@ -17,13 +17,12 @@
 package com.facebook.buck.d;
 
 import com.facebook.buck.cxx.Archive;
-import com.facebook.buck.cxx.CxxBuckConfig;
 import com.facebook.buck.cxx.CxxDescriptionEnhancer;
 import com.facebook.buck.cxx.CxxSourceRuleFactory;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -71,22 +70,21 @@ public class DLibraryDescription
       BuildRuleParams params,
       BuildRuleResolver buildRuleResolver,
       CellPathResolver cellRoots,
-      DLibraryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      DLibraryDescriptionArg args) {
 
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(buildRuleResolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
 
     if (buildTarget.getFlavors().contains(DDescriptionUtils.SOURCE_LINK_TREE)) {
       return DDescriptionUtils.createSourceSymlinkTree(
-          buildTarget, buildTarget, projectFilesystem, pathResolver, args.getSrcs());
+          buildTarget, projectFilesystem, pathResolver, args.getSrcs());
     }
 
     BuildTarget sourceTreeTarget =
         buildTarget.withAppendedFlavors(DDescriptionUtils.SOURCE_LINK_TREE);
     DIncludes dIncludes =
         DIncludes.builder()
-            .setLinkTree(new DefaultBuildTargetSourcePath(sourceTreeTarget))
+            .setLinkTree(DefaultBuildTargetSourcePath.of(sourceTreeTarget))
             .setSources(args.getSrcs().getPaths())
             .build();
 
@@ -99,8 +97,6 @@ public class DLibraryDescription
           buildRuleResolver,
           pathResolver,
           ruleFinder,
-          cxxPlatform,
-          dBuckConfig,
           /* compilerFlags */ ImmutableList.of(),
           args.getSrcs(),
           dIncludes,
@@ -118,13 +114,10 @@ public class DLibraryDescription
       BuildRuleResolver ruleResolver,
       SourcePathResolver pathResolver,
       SourcePathRuleFinder ruleFinder,
-      CxxPlatform cxxPlatform,
-      DBuckConfig dBuckConfig,
       ImmutableList<String> compilerFlags,
       SourceList sources,
       DIncludes dIncludes,
-      CxxSourceRuleFactory.PicType pic)
-      throws NoSuchBuildTargetException {
+      CxxSourceRuleFactory.PicType pic) {
 
     ImmutableList<SourcePath> compiledSources =
         DDescriptionUtils.sourcePathsForCompiledSources(
@@ -151,11 +144,13 @@ public class DLibraryDescription
             buildTarget,
             cxxPlatform.getFlavor(),
             pic,
-            cxxPlatform.getStaticLibraryExtension());
+            cxxPlatform.getStaticLibraryExtension(),
+            cxxBuckConfig.isUniqueLibraryNameEnabled());
 
     return Archive.from(
         staticTarget,
         projectFilesystem,
+        ruleResolver,
         ruleFinder,
         cxxPlatform,
         cxxBuckConfig.getArchiveContents(),

@@ -24,14 +24,13 @@ import com.facebook.buck.apple.AppleBundleResources;
 import com.facebook.buck.apple.AppleLibraryDescription;
 import com.facebook.buck.apple.HasAppleBundleResourcesDescription;
 import com.facebook.buck.graph.AbstractBreadthFirstTraversal;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Either;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.FlavorDomain;
 import com.facebook.buck.model.Flavored;
 import com.facebook.buck.model.Pair;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -63,15 +62,19 @@ public class JsBundleDescription
         Flavored,
         HasAppleBundleResourcesDescription<JsBundleDescriptionArg> {
 
-  private static final ImmutableSet<FlavorDomain<?>> FLAVOR_DOMAINS =
+  static final ImmutableSet<FlavorDomain<?>> FLAVOR_DOMAINS =
       ImmutableSet.of(
           JsFlavors.PLATFORM_DOMAIN,
           JsFlavors.OPTIMIZATION_DOMAIN,
           JsFlavors.RAM_BUNDLE_DOMAIN,
-          JsFlavors.SOURCE_MAP_DOMAIN);
+          JsFlavors.OUTPUT_OPTIONS_DOMAIN);
 
   @Override
   public boolean hasFlavors(ImmutableSet<Flavor> flavors) {
+    return supportsFlavors(flavors);
+  }
+
+  static boolean supportsFlavors(ImmutableSet<Flavor> flavors) {
     return JsFlavors.validateFlavors(flavors, FLAVOR_DOMAINS);
   }
 
@@ -93,8 +96,7 @@ public class JsBundleDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      JsBundleDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      JsBundleDescriptionArg args) {
 
     final ImmutableSortedSet<Flavor> flavors = buildTarget.getFlavors();
 
@@ -129,9 +131,9 @@ public class JsBundleDescription
     params = JsUtil.withWorkerDependencyOnly(params, resolver, args.getWorker());
 
     final Either<ImmutableSet<String>, String> entryPoint = args.getEntry();
-    ImmutableSortedSet<JsLibrary> libraryDeps =
-        new TransitiveLibraryDependencies(buildTarget, targetGraph, resolver)
-            .collect(args.getDeps());
+    TransitiveLibraryDependencies libsResolver =
+        new TransitiveLibraryDependencies(buildTarget, targetGraph, resolver);
+    ImmutableSortedSet<JsLibrary> libraryDeps = libsResolver.collect(args.getDeps());
 
     BuildRuleParams paramsWithLibraries = params.copyAppendingExtraDeps(libraryDeps);
     ImmutableSortedSet<SourcePath> libraries =
@@ -154,6 +156,17 @@ public class JsBundleDescription
           resolver.getRuleWithType(args.getWorker(), WorkerTool.class));
     }
 
+    ImmutableList<ImmutableSet<SourcePath>> libraryPathGroups =
+        args.getLibraryGroups()
+            .stream()
+            .map(
+                group ->
+                    group
+                        .stream()
+                        .map(lib -> libsResolver.requireLibrary(lib).getSourcePathToOutput())
+                        .collect(MoreCollectors.toImmutableSet()))
+            .collect(MoreCollectors.toImmutableList());
+
     String bundleName = getBundleName(args, buildTarget.getFlavors());
 
     return new JsBundle(
@@ -162,6 +175,7 @@ public class JsBundleDescription
         paramsWithLibraries,
         libraries,
         entryPoints,
+        libraryPathGroups,
         bundleName,
         resolver.getRuleWithType(args.getWorker(), WorkerTool.class));
   }
@@ -170,8 +184,7 @@ public class JsBundleDescription
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver resolver,
-      Optional<String> rDotJavaPackage)
-      throws NoSuchBuildTargetException {
+      Optional<String> rDotJavaPackage) {
     final BuildTarget bundleTarget =
         buildTarget
             .withAppendedFlavors(JsFlavors.FORCE_JS_BUNDLE)
@@ -197,8 +210,7 @@ public class JsBundleDescription
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver resolver,
-      JsBundle jsBundle)
-      throws NoSuchBuildTargetException {
+      JsBundle jsBundle) {
 
     final BuildTarget resourceTarget = buildTarget.withAppendedFlavors(JsFlavors.ANDROID_RESOURCES);
     final BuildRule resource = resolver.requireRule(resourceTarget);
@@ -219,19 +231,20 @@ public class JsBundleDescription
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver resolver,
       JsBundle jsBundle,
-      String rDotJavaPackage)
-      throws NoSuchBuildTargetException {
+      String rDotJavaPackage) {
+    if (buildTarget.getFlavors().contains(AndroidResourceDescription.AAPT2_COMPILE_FLAVOR)) {
+      return new Aapt2Compile(
+          buildTarget,
+          projectFilesystem,
+          ImmutableSortedSet.of(jsBundle),
+          jsBundle.getSourcePathToResources());
+    }
 
     BuildRuleParams params =
         new BuildRuleParams(
             () -> ImmutableSortedSet.of(),
             () -> ImmutableSortedSet.of(jsBundle),
             ImmutableSortedSet.of());
-
-    if (buildTarget.getFlavors().contains(AndroidResourceDescription.AAPT2_COMPILE_FLAVOR)) {
-      return new Aapt2Compile(
-          buildTarget, projectFilesystem, params, jsBundle.getSourcePathToResources());
-    }
 
     return new AndroidResource(
         buildTarget,
@@ -256,6 +269,11 @@ public class JsBundleDescription
       BuildRuleResolver resolver) {
     JsBundleOutputs bundle =
         resolver.getRuleWithType(targetNode.getBuildTarget(), JsBundleOutputs.class);
+    addAppleBundleResources(builder, bundle);
+  }
+
+  static void addAppleBundleResources(
+      AppleBundleResources.Builder builder, JsBundleOutputs bundle) {
     builder.addDirsContainingResourceDirs(
         bundle.getSourcePathToOutput(), bundle.getSourcePathToResources());
   }
@@ -277,6 +295,12 @@ public class JsBundleDescription
 
     /** For R.java */
     Optional<String> getAndroidPackage();
+
+    /**
+     * Get the ordered list of library groups that should be bundled together, in the case of
+     * "bundle splitting".
+     */
+    ImmutableList<ImmutableSet<BuildTarget>> getLibraryGroups();
   }
 
   private static String getBundleName(
@@ -339,13 +363,9 @@ public class JsBundleDescription
     }
 
     private JsLibrary requireLibrary(BuildTarget target) {
-      try {
-        BuildRule rule = resolver.requireRule(target.withAppendedFlavors(extraFlavors));
-        Preconditions.checkState(rule instanceof JsLibrary);
-        return (JsLibrary) rule;
-      } catch (NoSuchBuildTargetException e) {
-        throw new HumanReadableException(e);
-      }
+      BuildRule rule = resolver.requireRule(target.withAppendedFlavors(extraFlavors));
+      Preconditions.checkState(rule instanceof JsLibrary);
+      return (JsLibrary) rule;
     }
 
     private Iterable<BuildTarget> getLibraryDependencies(JsLibrary library) {

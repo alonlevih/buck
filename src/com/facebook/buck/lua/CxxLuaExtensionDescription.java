@@ -16,31 +16,30 @@
 
 package com.facebook.buck.lua;
 
-import com.facebook.buck.cxx.CxxBuckConfig;
 import com.facebook.buck.cxx.CxxConstructorArg;
 import com.facebook.buck.cxx.CxxDescriptionEnhancer;
 import com.facebook.buck.cxx.CxxFlags;
 import com.facebook.buck.cxx.CxxLinkableEnhancer;
-import com.facebook.buck.cxx.CxxPlatforms;
 import com.facebook.buck.cxx.CxxPreprocessAndCompile;
 import com.facebook.buck.cxx.CxxPreprocessables;
 import com.facebook.buck.cxx.CxxPreprocessorInput;
 import com.facebook.buck.cxx.CxxSource;
 import com.facebook.buck.cxx.CxxSourceRuleFactory;
-import com.facebook.buck.cxx.HeaderSymlinkTree;
-import com.facebook.buck.cxx.HeaderVisibility;
-import com.facebook.buck.cxx.LinkerMapMode;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkTargetMode;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatforms;
+import com.facebook.buck.cxx.toolchain.HeaderSymlinkTree;
+import com.facebook.buck.cxx.toolchain.HeaderVisibility;
+import com.facebook.buck.cxx.toolchain.LinkerMapMode;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkTargetMode;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.FlavorDomain;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -80,15 +79,13 @@ public class CxxLuaExtensionDescription
             CxxLuaExtensionDescription.AbstractCxxLuaExtensionDescriptionArg>,
         VersionPropagator<CxxLuaExtensionDescriptionArg> {
 
-  private final LuaConfig luaConfig;
+  private final FlavorDomain<LuaPlatform> luaPlatforms;
   private final CxxBuckConfig cxxBuckConfig;
-  private final FlavorDomain<CxxPlatform> cxxPlatforms;
 
   public CxxLuaExtensionDescription(
-      LuaConfig luaConfig, CxxBuckConfig cxxBuckConfig, FlavorDomain<CxxPlatform> cxxPlatforms) {
-    this.luaConfig = luaConfig;
+      FlavorDomain<LuaPlatform> luaPlatforms, CxxBuckConfig cxxBuckConfig) {
+    this.luaPlatforms = luaPlatforms;
     this.cxxBuckConfig = cxxBuckConfig;
-    this.cxxPlatforms = cxxPlatforms;
   }
 
   private String getExtensionName(BuildTarget target, CxxPlatform cxxPlatform) {
@@ -106,16 +103,17 @@ public class CxxLuaExtensionDescription
         .resolve(getExtensionName(target, cxxPlatform));
   }
 
-  private ImmutableList<com.facebook.buck.rules.args.Arg> getExtensionArgs(
+  private ImmutableList<Arg> getExtensionArgs(
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver ruleResolver,
       SourcePathResolver pathResolver,
       SourcePathRuleFinder ruleFinder,
       CellPathResolver cellRoots,
-      CxxPlatform cxxPlatform,
-      CxxLuaExtensionDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      LuaPlatform luaPlatform,
+      CxxLuaExtensionDescriptionArg args) {
+
+    CxxPlatform cxxPlatform = luaPlatform.getCxxPlatform();
 
     // Extract all C/C++ sources from the constructor arg.
     ImmutableMap<String, CxxSource> srcs =
@@ -144,7 +142,7 @@ public class CxxLuaExtensionDescription
     ImmutableSet<BuildRule> deps = args.getCxxDeps().get(ruleResolver, cxxPlatform);
     ImmutableList<CxxPreprocessorInput> cxxPreprocessorInput =
         ImmutableList.<CxxPreprocessorInput>builder()
-            .add(luaConfig.getLuaCxxLibrary(ruleResolver).getCxxPreprocessorInput(cxxPlatform))
+            .add(luaPlatform.getLuaCxxLibrary(ruleResolver).getCxxPreprocessorInput(cxxPlatform))
             .addAll(
                 CxxDescriptionEnhancer.collectCxxPreprocessorInput(
                     buildTarget,
@@ -164,7 +162,8 @@ public class CxxLuaExtensionDescription
                     ImmutableSet.of(),
                     CxxPreprocessables.getTransitiveCxxPreprocessorInput(cxxPlatform, deps),
                     args.getIncludeDirs(),
-                    sandboxTree))
+                    sandboxTree,
+                    args.getRawHeaders()))
             .build();
 
     // Generate rule to build the object files.
@@ -196,7 +195,7 @@ public class CxxLuaExtensionDescription
                 sandboxTree)
             .requirePreprocessAndCompileRules(srcs);
 
-    ImmutableList.Builder<com.facebook.buck.rules.args.Arg> argsBuilder = ImmutableList.builder();
+    ImmutableList.Builder<Arg> argsBuilder = ImmutableList.builder();
     CxxFlags.getFlagsWithMacrosWithPlatformMacroExpansion(
             args.getLinkerFlags(), args.getPlatformLinkerFlags(), cxxPlatform)
         .stream()
@@ -217,9 +216,9 @@ public class CxxLuaExtensionDescription
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver ruleResolver,
       CellPathResolver cellRoots,
-      CxxPlatform cxxPlatform,
-      CxxLuaExtensionDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      LuaPlatform luaPlatform,
+      CxxLuaExtensionDescriptionArg args) {
+    CxxPlatform cxxPlatform = luaPlatform.getCxxPlatform();
     if (buildTarget.getFlavors().contains(CxxDescriptionEnhancer.SANDBOX_TREE_FLAVOR)) {
       return CxxDescriptionEnhancer.createSandboxTreeBuildRule(
           ruleResolver, args, cxxPlatform, buildTarget, projectFilesystem);
@@ -243,7 +242,7 @@ public class CxxLuaExtensionDescription
         /* thinLto */ false,
         RichStream.from(args.getCxxDeps().get(ruleResolver, cxxPlatform))
             .filter(NativeLinkable.class)
-            .concat(Stream.of(luaConfig.getLuaCxxLibrary(ruleResolver)))
+            .concat(Stream.of(luaPlatform.getLuaCxxLibrary(ruleResolver)))
             .toImmutableList(),
         args.getCxxRuntimeType(),
         Optional.empty(),
@@ -258,7 +257,7 @@ public class CxxLuaExtensionDescription
                     pathResolver,
                     ruleFinder,
                     cellRoots,
-                    cxxPlatform,
+                    luaPlatform,
                     args))
             .build(),
         Optional.empty());
@@ -277,12 +276,11 @@ public class CxxLuaExtensionDescription
       BuildRuleParams params,
       final BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      final CxxLuaExtensionDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      final CxxLuaExtensionDescriptionArg args) {
 
     // See if we're building a particular "type" of this library, and if so, extract
     // it as an enum.
-    Optional<Map.Entry<Flavor, CxxPlatform>> platform = cxxPlatforms.getFlavorAndValue(buildTarget);
+    Optional<Map.Entry<Flavor, LuaPlatform>> platform = luaPlatforms.getFlavorAndValue(buildTarget);
 
     // If a C/C++ platform is specified, then build an extension with it.
     if (platform.isPresent()) {
@@ -304,7 +302,7 @@ public class CxxLuaExtensionDescription
       }
 
       @Override
-      public SourcePath getExtension(CxxPlatform cxxPlatform) throws NoSuchBuildTargetException {
+      public SourcePath getExtension(CxxPlatform cxxPlatform) {
         BuildRule rule =
             resolver.requireRule(getBuildTarget().withAppendedFlavors(cxxPlatform.getFlavor()));
         return Preconditions.checkNotNull(rule.getSourcePathToOutput());
@@ -323,8 +321,7 @@ public class CxxLuaExtensionDescription
       }
 
       @Override
-      public NativeLinkableInput getNativeLinkTargetInput(CxxPlatform cxxPlatform)
-          throws NoSuchBuildTargetException {
+      public NativeLinkableInput getNativeLinkTargetInput(CxxPlatform cxxPlatform) {
         return NativeLinkableInput.builder()
             .addAllArgs(
                 getExtensionArgs(
@@ -334,7 +331,7 @@ public class CxxLuaExtensionDescription
                     pathResolver,
                     ruleFinder,
                     cellRoots,
-                    cxxPlatform,
+                    luaPlatforms.getValue(cxxPlatform.getFlavor()),
                     args))
             .addAllFrameworks(args.getFrameworks())
             .build();
@@ -354,11 +351,15 @@ public class CxxLuaExtensionDescription
       AbstractCxxLuaExtensionDescriptionArg constructorArg,
       ImmutableCollection.Builder<BuildTarget> extraDepsBuilder,
       ImmutableCollection.Builder<BuildTarget> targetGraphOnlyDepsBuilder) {
-    // Add deps from lua C/C++ library.
-    Optionals.addIfPresent(luaConfig.getLuaCxxLibraryTarget(), extraDepsBuilder);
 
-    // Get any parse time deps from the C/C++ platforms.
-    extraDepsBuilder.addAll(CxxPlatforms.getParseTimeDeps(cxxPlatforms.getValues()));
+    for (LuaPlatform luaPlatform : luaPlatforms.getValues()) {
+
+      // Add deps from lua C/C++ library.
+      Optionals.addIfPresent(luaPlatform.getLuaCxxLibraryTarget(), extraDepsBuilder);
+
+      // Get any parse time deps from the C/C++ platforms.
+      extraDepsBuilder.addAll(CxxPlatforms.getParseTimeDeps(luaPlatform.getCxxPlatform()));
+    }
   }
 
   @BuckStyleImmutable

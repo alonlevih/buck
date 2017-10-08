@@ -20,7 +20,7 @@ enum BuildSlaveEventType {
 struct BuildSlaveEvent {
     1: optional BuildSlaveEventType eventType = BuildSlaveEventType.UNKNOWN;
     2: optional stampede.StampedeId stampedeId;
-    3: optional stampede.RunId runId;
+    3: optional stampede.BuildSlaveRunId buildSlaveRunId;
 
     10: optional BuildSlaveConsoleEvent consoleEvent;
 }
@@ -28,7 +28,7 @@ struct BuildSlaveEvent {
 enum ConsoleEventSeverity {
     INFO = 0,
     WARNING = 1
-    SEVERE = 2,   
+    SEVERE = 2,
 }
 
 struct BuildSlaveConsoleEvent {
@@ -54,7 +54,7 @@ struct CacheRateStats {
 
 struct BuildSlaveStatus {
     1: optional stampede.StampedeId stampedeId;
-    2: optional stampede.RunId runId;
+    2: optional stampede.BuildSlaveRunId buildSlaveRunId;
 
     10: optional i32 totalRulesCount;
     11: optional i32 rulesStartedCount;
@@ -76,6 +76,9 @@ struct FileMaterializationStats {
     1: optional i32 totalFilesMaterializedCount;
     2: optional i32 filesMaterializedFromCASCount;
     3: optional i64 totalTimeSpentMaterializingFilesFromCASMillis;
+    4: optional i32 fullBufferCasMultiFetchCount;
+    5: optional i32 periodicCasMultiFetchCount;
+    6: optional i64 timeSpentInMultiFetchNetworkCallsMs;
 }
 
 struct BuildSlavePerStageTimingStats {
@@ -85,6 +88,7 @@ struct BuildSlavePerStageTimingStats {
     4: optional i64 targetGraphDeserializationTimeMillis;
     5: optional i64 actionGraphCreationTimeMillis;
     6: optional i64 totalBuildtimeMillis;
+    7: optional i64 distBuildPreparationTimeMillis;
 }
 
 struct BuildSlaveFinishedStats {
@@ -92,4 +96,6 @@ struct BuildSlaveFinishedStats {
     2: optional i32 exitCode;
     3: optional FileMaterializationStats fileMaterializationStats;
     4: optional BuildSlavePerStageTimingStats buildSlavePerStageTimingStats;
+    5: optional string hostname;
+    6: optional string distBuildMode;
 }

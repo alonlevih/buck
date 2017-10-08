@@ -27,7 +27,7 @@
 !com.facebook.buck.cxx.HeaderMapStepTest
 !com.facebook.buck.cxx.OmnibusTest
 !com.facebook.buck.cxx.ToolTest
-!com.facebook.buck.cxx.platform.DebugPathSanitizerTest
+!com.facebook.buck.cxx.toolchain.DebugPathSanitizerTest
 !com.facebook.buck.jvm.java.ExternalJavacIntegrationTest#whenBuckdUsesExternalJavacThenClientEnvironmentUsed
 !com.facebook.buck.python.PrebuiltPythonLibraryIntegrationTest
 !com.facebook.buck.python.PythonBinaryIntegrationTest
@@ -37,3 +37,10 @@
 !com.facebook.buck.thrift.ThriftLibraryIntegrationTest#shouldBeAbleToConstructACxxLibraryFromThrift
 !com.facebook.buck.util.ListeningProcessExecutorTest#clearsEnvWhenExplicitlySet
 !com.facebook.buck.intellij.ideabuck.config.BuckExecutableDetectorTest
+!com.facebook.buck.io.filesystem.skylark.SkylarkFilesystemTest
+!com.facebook.buck.jvm.java.JavacStepTest
+!com.facebook.buck.cli.QueryCommandIntegrationTest
+!com.facebook.buck.rules.CachingBuildEngineTest
+!com.facebook.buck.rules.CachingBuildEngineTest.*
+!com.facebook.buck.rules.ActionGraphCacheIntegrationTest
+!com.facebook.buck.swift.SwiftNativeLinkableTest

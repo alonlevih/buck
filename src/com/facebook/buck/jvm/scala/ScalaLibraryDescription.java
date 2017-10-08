@@ -16,11 +16,14 @@
 
 package com.facebook.buck.jvm.scala;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.HasJavaAbi;
+import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibraryDescription;
+import com.facebook.buck.jvm.java.JavacOptions;
+import com.facebook.buck.jvm.java.JavacOptionsFactory;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -40,9 +43,14 @@ public class ScalaLibraryDescription
             ScalaLibraryDescription.AbstractScalaLibraryDescriptionArg> {
 
   private final ScalaBuckConfig scalaBuckConfig;
+  private final JavaBuckConfig javaBuckConfig;
+  private final JavacOptions defaultOptions;
 
-  public ScalaLibraryDescription(ScalaBuckConfig scalaBuckConfig) {
+  public ScalaLibraryDescription(
+      ScalaBuckConfig scalaBuckConfig, JavaBuckConfig javaBuckConfig, JavacOptions defaultOptions) {
     this.scalaBuckConfig = scalaBuckConfig;
+    this.javaBuckConfig = javaBuckConfig;
+    this.defaultOptions = defaultOptions;
   }
 
   @Override
@@ -58,22 +66,25 @@ public class ScalaLibraryDescription
       BuildRuleParams rawParams,
       final BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      ScalaLibraryDescriptionArg args)
-      throws NoSuchBuildTargetException {
-    ScalaLibraryBuilder scalaLibraryBuilder =
-        new ScalaLibraryBuilder(
-                targetGraph,
+      ScalaLibraryDescriptionArg args) {
+    JavacOptions javacOptions =
+        JavacOptionsFactory.create(defaultOptions, buildTarget, projectFilesystem, resolver, args);
+
+    DefaultJavaLibraryRules scalaLibraryBuilder =
+        ScalaLibraryBuilder.newInstance(
                 buildTarget,
                 projectFilesystem,
                 rawParams,
                 resolver,
-                cellRoots,
-                scalaBuckConfig)
-            .setArgs(args);
+                scalaBuckConfig,
+                javaBuckConfig,
+                args)
+            .setJavacOptions(javacOptions)
+            .build();
 
     return HasJavaAbi.isAbiTarget(buildTarget)
         ? scalaLibraryBuilder.buildAbi()
-        : scalaLibraryBuilder.build();
+        : scalaLibraryBuilder.buildLibrary();
   }
 
   @Override

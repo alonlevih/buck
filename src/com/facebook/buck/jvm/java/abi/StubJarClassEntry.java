@@ -38,7 +38,7 @@ class StubJarClassEntry extends StubJarEntry {
   @Nullable
   public static StubJarClassEntry of(LibraryReader input, Path path, boolean sourceAbiCompatible)
       throws IOException {
-    ClassNode stub = new ClassNode(Opcodes.ASM5);
+    ClassNode stub = new ClassNode(Opcodes.ASM6);
 
     // As we read the class in, we create a partial stub that removes non-ABI methods and fields
     // but leaves the entire InnerClasses table. We record all classes that are referenced from
@@ -74,7 +74,7 @@ class StubJarClassEntry extends StubJarEntry {
     writer.writeEntry(path, this::openInputStream);
   }
 
-  private InputStream openInputStream() throws IOException {
+  private InputStream openInputStream() {
     ClassWriter writer = new ClassWriter(0);
     ClassVisitor visitor = writer;
     visitor = new InnerClassSortingClassVisitor(stub.name, visitor);
@@ -122,7 +122,7 @@ class StubJarClassEntry extends StubJarEntry {
     private final List<InnerClassNode> innerClasses = new ArrayList<>();
 
     private InnerClassSortingClassVisitor(String className, ClassVisitor cv) {
-      super(Opcodes.ASM5, cv);
+      super(Opcodes.ASM6, cv);
       this.className = className;
     }
 

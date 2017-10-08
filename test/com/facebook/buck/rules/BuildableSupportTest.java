@@ -16,7 +16,7 @@
 
 package com.facebook.buck.rules;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.InternalFlavor;
 import com.facebook.buck.step.Step;
@@ -38,14 +38,15 @@ public class BuildableSupportTest {
     BuildTarget target = BuildTarget.of(Paths.get("some"), "//some", "name");
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildRule rule1 = makeRule(target, filesystem, "rule1");
     BuildRule rule2 = makeRule(target, filesystem, "rule2");
     BuildRule rule3 = makeRule(target, filesystem, "rule3");
     BuildRule rule4 = makeRule(target, filesystem, "rule4");
     BuildRule rule5 = makeRule(target, filesystem, "rule5");
     ImmutableSet<BuildRule> rules = ImmutableSet.of(rule1, rule2, rule3, rule4, rule5);
-    ruleResolver.addAllToIndex(rules);
+    rules.forEach(ruleResolver::addToIndex);
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(ruleResolver);
 
     AddsToRuleKey rule =
@@ -84,7 +85,7 @@ public class BuildableSupportTest {
       @Nullable
       @Override
       public SourcePath getSourcePathToOutput() {
-        return new ExplicitBuildTargetSourcePath(getBuildTarget(), Paths.get("whatever"));
+        return ExplicitBuildTargetSourcePath.of(getBuildTarget(), Paths.get("whatever"));
       }
     };
   }

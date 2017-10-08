@@ -22,12 +22,13 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import com.android.common.SdkConstants;
+import com.facebook.buck.android.exopackage.ExopackageInfo;
 import com.facebook.buck.android.exopackage.ExopackageInstaller;
 import com.facebook.buck.android.exopackage.TestAndroidDevice;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
-import com.facebook.buck.rules.ExopackageInfo;
-import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.step.ExecutionContext;
@@ -85,7 +86,7 @@ public class ExopackageInstallerIntegrationTest {
   @Before
   public void setUp() throws Exception {
     assumeTrue(Platform.detect() != Platform.WINDOWS);
-    filesystem = new ProjectFilesystem(tmpFolder.getRoot());
+    filesystem = TestProjectFilesystems.createProjectFilesystem(tmpFolder.getRoot());
     executionContext = TestExecutionContext.newInstance();
     currentBuildState = null;
     filesystem.mkdirs(dexDirectory);
@@ -464,8 +465,8 @@ public class ExopackageInstallerIntegrationTest {
 
     builder.addApk(FAKE_PACKAGE_NAME, apkPath);
 
-    SourcePath apkSourcePath = new PathSourcePath(filesystem, apkPath);
-    SourcePath manifestSourcePath = new PathSourcePath(filesystem, manifestPath);
+    SourcePath apkSourcePath = FakeSourcePath.of(filesystem, apkPath);
+    SourcePath manifestSourcePath = FakeSourcePath.of(filesystem, manifestPath);
 
     Optional<ExopackageInfo.DexInfo> dexInfo = Optional.empty();
     ImmutableList<String> dexesContents = currentBuildState.secondaryDexesContents;
@@ -486,8 +487,8 @@ public class ExopackageInstallerIntegrationTest {
       dexInfo =
           Optional.of(
               ExopackageInfo.DexInfo.of(
-                  new PathSourcePath(filesystem, dexManifest),
-                  new PathSourcePath(filesystem, dexDirectory)));
+                  FakeSourcePath.of(filesystem, dexManifest),
+                  FakeSourcePath.of(filesystem, dexDirectory)));
 
       builder.addExoFile("secondary-dex/metadata.txt", dexMetadata);
     }
@@ -520,8 +521,8 @@ public class ExopackageInstallerIntegrationTest {
       nativeLibsInfo =
           Optional.of(
               ExopackageInfo.NativeLibsInfo.of(
-                  new PathSourcePath(filesystem, nativeManifest),
-                  new PathSourcePath(filesystem, nativeDirectory)));
+                  FakeSourcePath.of(filesystem, nativeManifest),
+                  FakeSourcePath.of(filesystem, nativeDirectory)));
       builder.addExoFile(
           "native-libs/" + device.getDeviceAbis().get(0) + "/metadata.txt", expectedMetadata);
     }
@@ -538,7 +539,7 @@ public class ExopackageInstallerIntegrationTest {
         Path resourcePath = resourcesDirectory.resolve("resources-" + n++ + ".apk");
         String content = resourcesContents.next();
         writeFile(resourcePath, content);
-        resourcesInfoBuilder.addResourcesPaths(new PathSourcePath(filesystem, resourcePath));
+        resourcesInfoBuilder.addResourcesPaths(FakeSourcePath.of(filesystem, resourcePath));
         Sha1HashCode resourceHash = filesystem.computeSha1(resourcePath);
         expectedMetadata += prefix + "resources " + resourceHash;
         prefix = "\n";

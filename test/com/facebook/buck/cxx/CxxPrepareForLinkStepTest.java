@@ -18,11 +18,13 @@ package com.facebook.buck.cxx;
 
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -50,7 +52,8 @@ public class CxxPrepareForLinkStepTest {
   public void testCreateCxxPrepareForLinkStep() throws Exception {
     Path dummyPath = Paths.get("dummy");
     BuildRuleResolver buildRuleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(buildRuleResolver));
 
@@ -58,7 +61,7 @@ public class CxxPrepareForLinkStepTest {
     ImmutableList<Arg> dummyArgs =
         ImmutableList.of(
             FileListableLinkerInputArg.withSourcePathArg(
-                SourcePathArg.of(new FakeSourcePath("libb.a"))));
+                SourcePathArg.of(FakeSourcePath.of("libb.a"))));
 
     ImmutableList<Step> cxxPrepareForLinkStepSupportFileList =
         CxxPrepareForLinkStep.create(
@@ -138,7 +141,8 @@ public class CxxPrepareForLinkStepTest {
     ExecutionContext context = TestExecutionContext.newInstance();
 
     BuildRuleResolver buildRuleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(buildRuleResolver));
 
@@ -149,7 +153,7 @@ public class CxxPrepareForLinkStepTest {
             StringArg.of("hello"),
             StringArg.of("a.o"),
             FileListableLinkerInputArg.withSourcePathArg(
-                SourcePathArg.of(new FakeSourcePath("libb.a"))),
+                SourcePathArg.of(FakeSourcePath.of("libb.a"))),
             StringArg.of("-lsysroot"),
             StringArg.of("/Library/Application Support/blabla"),
             StringArg.of("-F/System/Frameworks"),

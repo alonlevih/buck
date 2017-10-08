@@ -27,7 +27,7 @@ import com.facebook.buck.cxx.CxxDescriptionEnhancer;
 import com.facebook.buck.cxx.CxxLink;
 import com.facebook.buck.cxx.FakeCxxLibrary;
 import com.facebook.buck.cxx.HeaderSymlinkTreeWithHeaderMap;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.BuildTargets;
@@ -39,6 +39,7 @@ import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.ExplicitBuildTargetSourcePath;
 import com.facebook.buck.rules.FakeBuildRule;
 import com.facebook.buck.rules.FakeTargetNodeBuilder;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -74,7 +75,8 @@ public class SwiftLibraryIntegrationTest {
   @Before
   public void setUp() {
     resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     ruleFinder = new SourcePathRuleFinder(resolver);
     pathResolver = DefaultSourcePathResolver.from(ruleFinder);
   }
@@ -167,7 +169,7 @@ public class SwiftLibraryIntegrationTest {
     assertThat(
         sourcePathArg.getPath(),
         Matchers.equalTo(
-            new ExplicitBuildTargetSourcePath(
+            ExplicitBuildTargetSourcePath.of(
                 swiftCompileTarget,
                 pathResolver
                     .getRelativePath(buildRule.getSourcePathToOutput())
@@ -177,7 +179,7 @@ public class SwiftLibraryIntegrationTest {
     assertThat(objArg, Matchers.instanceOf(FileListableLinkerInputArg.class));
     FileListableLinkerInputArg fileListArg = (FileListableLinkerInputArg) objArg;
     ExplicitBuildTargetSourcePath fileListSourcePath =
-        new ExplicitBuildTargetSourcePath(
+        ExplicitBuildTargetSourcePath.of(
             swiftCompileTarget,
             pathResolver.getRelativePath(buildRule.getSourcePathToOutput()).resolve("bar.o"));
     assertThat(fileListArg.getPath(), Matchers.equalTo(fileListSourcePath));
@@ -227,6 +229,34 @@ public class SwiftLibraryIntegrationTest {
     ProjectWorkspace.ProcessResult result =
         workspace.runBuckCommand("build", target.getFullyQualifiedName());
     result.assertSuccess();
+  }
+
+  @Test
+  public void testGlobalFlagsInRuleKey() throws Exception {
+    assumeThat(
+        AppleNativeIntegrationTestUtils.isSwiftAvailable(ApplePlatform.IPHONESIMULATOR), is(true));
+    ProjectWorkspace workspace =
+        TestDataHelper.createProjectWorkspaceForScenario(this, "helloworld", tmpDir);
+    workspace.setUp();
+
+    BuildTarget target = workspace.newBuildTarget("//:hello#iphonesimulator-x86_64,swift-compile");
+    ProjectWorkspace.ProcessResult result =
+        workspace.runBuckCommand("build", target.getFullyQualifiedName());
+    result.assertSuccess();
+    workspace
+        .getBuildLog()
+        .assertTargetBuiltLocally("//:hello#iphonesimulator-x86_64,swift-compile");
+
+    workspace.runBuckCommand("build", target.getFullyQualifiedName()).assertSuccess();
+    workspace
+        .getBuildLog()
+        .assertTargetHadMatchingRuleKey("//:hello#iphonesimulator-x86_64,swift-compile");
+
+    workspace.addBuckConfigLocalOption("swift", "compiler_flags", "-D DEBUG");
+    workspace.runBuckCommand("build", target.getFullyQualifiedName()).assertSuccess();
+    workspace
+        .getBuildLog()
+        .assertTargetBuiltLocally("//:hello#iphonesimulator-x86_64,swift-compile");
   }
 
   private SwiftLibraryDescriptionArg createDummySwiftArg() {

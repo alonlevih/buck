@@ -20,7 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRule;
@@ -30,8 +30,8 @@ import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeOnDiskBuildInfo;
 import com.facebook.buck.rules.FakeSourcePath;
-import com.facebook.buck.rules.PathSourcePath;
 import com.facebook.buck.rules.RuleKey;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -44,7 +44,7 @@ import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.facebook.buck.testutil.TargetGraphFactory;
 import com.facebook.buck.util.cache.FileHashCache;
 import com.facebook.buck.util.cache.FileHashCacheMode;
-import com.facebook.buck.util.cache.StackedFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
@@ -69,18 +69,18 @@ public class AndroidResourceTest {
 
           TargetNode<?, ?> resourceNode =
               AndroidResourceBuilder.createBuilder(buildTarget, projectFilesystem)
-                  .setRes(new FakeSourcePath(projectFilesystem, "java/src/com/facebook/base/res"))
+                  .setRes(FakeSourcePath.of(projectFilesystem, "java/src/com/facebook/base/res"))
                   .setRDotJavaPackage("com.facebook")
                   .setAssets(
-                      new FakeSourcePath(projectFilesystem, "java/src/com/facebook/base/assets"))
+                      FakeSourcePath.of(projectFilesystem, "java/src/com/facebook/base/assets"))
                   .setManifest(
-                      new PathSourcePath(
-                          projectFilesystem,
-                          Paths.get("java/src/com/facebook/base/AndroidManifest.xml")))
+                      FakeSourcePath.of(
+                          projectFilesystem, "java/src/com/facebook/base/AndroidManifest.xml"))
                   .build();
 
           TargetGraph targetGraph = TargetGraphFactory.newInstance(resourceNode);
-          return new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+          return new SingleThreadedBuildRuleResolver(
+              targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
         };
 
     FakeFileHashCache hashCache =
@@ -122,7 +122,7 @@ public class AndroidResourceTest {
     BuildRuleParams params = TestBuildRuleParams.create();
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     AndroidResource androidResource =
@@ -132,9 +132,9 @@ public class AndroidResourceTest {
             params,
             ruleFinder,
             /* deps */ ImmutableSortedSet.of(),
-            new FakeSourcePath("foo/res"),
+            FakeSourcePath.of("foo/res"),
             ImmutableSortedMap.of(
-                Paths.get("values/strings.xml"), new FakeSourcePath("foo/res/values/strings.xml")),
+                Paths.get("values/strings.xml"), FakeSourcePath.of("foo/res/values/strings.xml")),
             /* rDotJavaPackage */ "com.example.android",
             /* assets */ null,
             /* assetsSrcs */ ImmutableSortedMap.of(),
@@ -157,7 +157,7 @@ public class AndroidResourceTest {
     BuildRuleParams params = TestBuildRuleParams.create();
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     AndroidResource androidResource =
@@ -167,14 +167,13 @@ public class AndroidResourceTest {
             params,
             ruleFinder,
             /* deps */ ImmutableSortedSet.of(),
-            new FakeSourcePath("foo/res"),
+            FakeSourcePath.of("foo/res"),
             ImmutableSortedMap.of(
-                Paths.get("values/strings.xml"), new FakeSourcePath("foo/res/values/strings.xml")),
+                Paths.get("values/strings.xml"), FakeSourcePath.of("foo/res/values/strings.xml")),
             /* rDotJavaPackage */ null,
             /* assets */ null,
             /* assetsSrcs */ ImmutableSortedMap.of(),
-            /* manifestFile */ new PathSourcePath(
-                projectFilesystem, Paths.get("foo/AndroidManifest.xml")),
+            /* manifestFile */ FakeSourcePath.of(projectFilesystem, "foo/AndroidManifest.xml"),
             /* hasWhitelistedStrings */ false);
     projectFilesystem.writeContentsToPath(
         "com.ex.pkg\n", resolver.getRelativePath(androidResource.getPathToRDotJavaPackageFile()));
@@ -189,7 +188,7 @@ public class AndroidResourceTest {
 
     TargetNode<?, ?> depNode =
         AndroidResourceBuilder.createBuilder(BuildTargetFactory.newInstance("//:dep"), filesystem)
-            .setManifest(new FakeSourcePath("manifest"))
+            .setManifest(FakeSourcePath.of("manifest"))
             .setRes(Paths.get("res"))
             .build();
     TargetNode<?, ?> resourceNode =
@@ -199,7 +198,8 @@ public class AndroidResourceTest {
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depNode, resourceNode);
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
 
     AndroidResource dep = (AndroidResource) resolver.requireRule(depNode.getBuildTarget());
     AndroidResource resource =

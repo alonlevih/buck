@@ -16,21 +16,43 @@
 
 package com.facebook.buck.jvm.java.abi.source;
 
-import com.facebook.buck.jvm.java.abi.source.api.BootClasspathOracle;
+import com.facebook.buck.jvm.java.abi.source.api.SourceOnlyAbiRuleInfo;
 import com.facebook.buck.jvm.java.plugin.adapter.BuckJavacTask;
 import com.facebook.buck.jvm.java.plugin.adapter.BuckJavacTaskProxyImpl;
 import com.facebook.buck.jvm.java.testutil.compiler.CompilerTreeApiTest;
 import com.sun.source.util.TaskListener;
 import javax.tools.Diagnostic;
+import javax.tools.JavaFileManager;
 
 class ValidatingTaskListenerFactory implements CompilerTreeApiTest.TaskListenerFactory {
+  private final String ruleName;
+  private final boolean requiredForSourceAbi;
+
+  ValidatingTaskListenerFactory(String ruleName, boolean requiredForSourceAbi) {
+    this.ruleName = ruleName;
+    this.requiredForSourceAbi = requiredForSourceAbi;
+  }
+
   @Override
   public TaskListener newTaskListener(BuckJavacTask task) {
     return new ValidatingTaskListener(
         new BuckJavacTaskProxyImpl(task),
-        new BootClasspathOracle() {
+        new SourceOnlyAbiRuleInfo() {
           @Override
-          public boolean isOnBootClasspath(String binaryName) {
+          public String getRuleName() {
+            return ruleName;
+          }
+
+          @Override
+          public boolean ruleIsRequiredForSourceOnlyAbi() {
+            return requiredForSourceAbi;
+          }
+
+          @Override
+          public void setFileManager(JavaFileManager fileManager) {}
+
+          @Override
+          public boolean classIsOnBootClasspath(String binaryName) {
             return binaryName.startsWith("java.");
           }
         },

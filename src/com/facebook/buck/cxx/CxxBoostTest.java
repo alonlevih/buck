@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildContext;
 import com.facebook.buck.rules.BuildRule;
@@ -60,7 +60,7 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 @SuppressWarnings("PMD.TestClassWithoutTestCases")
-public class CxxBoostTest extends CxxTest implements HasRuntimeDeps, ExternalTestRunnerRule {
+class CxxBoostTest extends CxxTest implements HasRuntimeDeps, ExternalTestRunnerRule {
 
   private static final Pattern SUITE_START = Pattern.compile("^Entering test suite \"(.*)\"$");
   private static final Pattern SUITE_END = Pattern.compile("^Leaving test suite \"(.*)\"$");
@@ -107,7 +107,7 @@ public class CxxBoostTest extends CxxTest implements HasRuntimeDeps, ExternalTes
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ForwardingBuildTargetSourcePath(
+    return ForwardingBuildTargetSourcePath.of(
         getBuildTarget(), Preconditions.checkNotNull(binary.getSourcePathToOutput()));
   }
 

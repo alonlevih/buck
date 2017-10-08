@@ -16,13 +16,13 @@
 
 package com.facebook.buck.jvm.groovy;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.HasJavaAbi;
 import com.facebook.buck.jvm.java.JavaLibraryDescription;
 import com.facebook.buck.jvm.java.JavacOptions;
 import com.facebook.buck.jvm.java.JavacOptionsFactory;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -59,32 +59,23 @@ public class GroovyLibraryDescription implements Description<GroovyLibraryDescri
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      GroovyLibraryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      GroovyLibraryDescriptionArg args) {
     JavacOptions javacOptions =
         JavacOptionsFactory.create(
             defaultJavacOptions, buildTarget, projectFilesystem, resolver, args);
-    DefaultGroovyLibraryBuilder defaultGroovyLibraryBuilder =
-        new DefaultGroovyLibraryBuilder(
-                targetGraph,
-                buildTarget,
-                projectFilesystem,
-                params,
-                resolver,
-                cellRoots,
-                javacOptions,
-                groovyBuckConfig)
-            .setArgs(args);
+    DefaultJavaLibraryRules defaultGroovyLibraryBuilder =
+        DefaultGroovyLibraryBuilder.newInstance(
+            buildTarget, projectFilesystem, params, resolver, javacOptions, groovyBuckConfig, args);
 
     return HasJavaAbi.isAbiTarget(buildTarget)
         ? defaultGroovyLibraryBuilder.buildAbi()
-        : defaultGroovyLibraryBuilder.build();
+        : defaultGroovyLibraryBuilder.buildLibrary();
   }
 
   public interface CoreArg extends JavaLibraryDescription.CoreArg {
     // Groovyc may not play nice with this, so turning it off
     @Override
-    default Optional<Boolean> getGenerateAbiFromSource() {
+    default Optional<Boolean> getGenerateSourceOnlyAbi() {
       return Optional.of(false);
     }
 

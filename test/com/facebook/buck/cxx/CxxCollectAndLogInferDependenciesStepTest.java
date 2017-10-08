@@ -23,9 +23,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assume.assumeThat;
 
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.cxx.platform.GccPreprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.GccPreprocessor;
+import com.facebook.buck.cxx.toolchain.InferBuckConfig;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.UnflavoredBuildTarget;
 import com.facebook.buck.rules.BuildRuleParams;
@@ -34,8 +36,8 @@ import com.facebook.buck.rules.CommandTool;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
-import com.facebook.buck.rules.PathSourcePath;
 import com.facebook.buck.rules.RuleKeyObjectSink;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -85,7 +87,7 @@ public class CxxCollectAndLogInferDependenciesStepTest {
           }
         };
 
-    SourcePath preprocessor = new PathSourcePath(filesystem, Paths.get("preprocessor"));
+    SourcePath preprocessor = FakeSourcePath.of(filesystem, "preprocessor");
     Tool preprocessorTool = new CommandTool.Builder().addInput(preprocessor).build();
 
     PreprocessorDelegate preprocessorDelegate =
@@ -106,7 +108,7 @@ public class CxxCollectAndLogInferDependenciesStepTest {
         buildRuleParams,
         CxxToolFlags.of(),
         CxxToolFlags.of(),
-        new FakeSourcePath("src.c"),
+        FakeSourcePath.of("src.c"),
         AbstractCxxSource.Type.C,
         Paths.get("src.o"),
         preprocessorDelegate,
@@ -204,7 +206,8 @@ public class CxxCollectAndLogInferDependenciesStepTest {
     BuildRuleParams buildRuleParams2 = TestBuildRuleParams.create();
 
     BuildRuleResolver testBuildRuleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver testSourcePathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(testBuildRuleResolver));
 
@@ -262,7 +265,8 @@ public class CxxCollectAndLogInferDependenciesStepTest {
     BuildRuleParams buildRuleParams2 = TestBuildRuleParams.create();
 
     BuildRuleResolver testBuildRuleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver testSourcePathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(testBuildRuleResolver));
 

@@ -16,7 +16,8 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.Linker;
+import com.facebook.buck.cxx.toolchain.HasSystemFrameworkAndLibraries;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.HasDefaultFlavors;
@@ -29,6 +30,7 @@ import com.facebook.buck.rules.SourceWithFlags;
 import com.facebook.buck.rules.coercer.PatternMatchedCollection;
 import com.facebook.buck.rules.coercer.SourceList;
 import com.facebook.buck.rules.macros.StringWithMacros;
+import com.facebook.buck.util.HumanReadableException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
@@ -53,6 +55,33 @@ public interface CxxConstructorArg
   @Value.Default
   default SourceList getHeaders() {
     return SourceList.EMPTY;
+  }
+
+  /**
+   * Raw headers are headers which are used as they are (via compilation flags). Buck doesn't copy
+   * them or create symlinks for them. They are public (since managed by compilation flags).
+   *
+   * @return a list of raw headers
+   */
+  @Value.Default
+  default ImmutableSortedSet<SourcePath> getRawHeaders() {
+    return ImmutableSortedSet.of();
+  }
+
+  @Value.Check
+  default void checkHeadersUsage() {
+    if (getRawHeaders().isEmpty()) {
+      return;
+    }
+
+    if (!getHeaders().isEmpty()) {
+      throw new HumanReadableException("Cannot use `headers` and `raw_headers` in the same rule.");
+    }
+
+    if (!getPlatformHeaders().getPatternsAndValues().isEmpty()) {
+      throw new HumanReadableException(
+          "Cannot use `platform_headers` and `raw_headers` in the same rule.");
+    }
   }
 
   @Value.Default

@@ -19,6 +19,7 @@ package com.facebook.buck.jvm.java;
 import com.facebook.buck.event.api.BuckTracing;
 import com.facebook.buck.jvm.java.abi.SourceBasedAbiStubber;
 import com.facebook.buck.jvm.java.abi.StubGenerator;
+import com.facebook.buck.jvm.java.abi.source.api.SourceOnlyAbiRuleInfo;
 import com.facebook.buck.jvm.java.plugin.PluginLoader;
 import com.facebook.buck.jvm.java.plugin.api.BuckJavacTaskListener;
 import com.facebook.buck.jvm.java.plugin.api.BuckJavacTaskProxy;
@@ -30,7 +31,7 @@ import com.facebook.buck.jvm.java.tracing.TranslatingJavacPhaseTracer;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.util.HumanReadableException;
-import com.facebook.buck.zip.JarBuilder;
+import com.facebook.buck.util.zip.JarBuilder;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
@@ -44,7 +45,6 @@ import java.io.PrintWriter; // NOPMD required by API
 import java.io.Writer;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
@@ -68,7 +68,8 @@ class Jsr199JavacInvocation implements Javac.Invocation {
   private final ImmutableList<JavacPluginJsr199Fields> pluginFields;
   private final ImmutableSortedSet<Path> javaSourceFilePaths;
   private final Path pathToSrcsList;
-  private final JavacCompilationMode compilationMode;
+  private final AbiGenerationMode abiGenerationMode;
+  @Nullable private final SourceOnlyAbiRuleInfo ruleInfo;
   private final DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
   private final List<AutoCloseable> closeables = new ArrayList<>();
 
@@ -84,7 +85,8 @@ class Jsr199JavacInvocation implements Javac.Invocation {
       ImmutableList<JavacPluginJsr199Fields> pluginFields,
       ImmutableSortedSet<Path> javaSourceFilePaths,
       Path pathToSrcsList,
-      JavacCompilationMode compilationMode) {
+      AbiGenerationMode abiGenerationMode,
+      @Nullable SourceOnlyAbiRuleInfo ruleInfo) {
     this.compilerConstructor = compilerConstructor;
     this.context = context;
     this.invokingRule = invokingRule;
@@ -92,7 +94,8 @@ class Jsr199JavacInvocation implements Javac.Invocation {
     this.pluginFields = pluginFields;
     this.javaSourceFilePaths = javaSourceFilePaths;
     this.pathToSrcsList = pathToSrcsList;
-    this.compilationMode = compilationMode;
+    this.abiGenerationMode = abiGenerationMode;
+    this.ruleInfo = ruleInfo;
   }
 
   @Override
@@ -111,6 +114,7 @@ class Jsr199JavacInvocation implements Javac.Invocation {
                   new StubGenerator(
                       getTargetVersion(options),
                       javacTask.getElements(),
+                      javacTask.getMessager(),
                       jarBuilder,
                       context.getEventSink());
               stubGenerator.generate(topLevelTypes);
@@ -120,10 +124,18 @@ class Jsr199JavacInvocation implements Javac.Invocation {
             }
           });
 
-      javacTask.parse();
-      // JavacTask.call would stop between these phases if there were an error, so we do too.
-      if (buildSuccessful()) {
-        javacTask.enter();
+      try {
+        javacTask.parse();
+        // JavacTask.call would stop between these phases if there were an error, so we do too.
+        if (buildSuccessful()) {
+          javacTask.enter();
+        }
+      } catch (RuntimeException e) {
+        throw new HumanReadableException(
+            e,
+            String.format(
+                "The compiler crashed when run without dependencies. There is probably an error in the source code. Try building %s to reveal it.",
+                invokingRule.getUnflavoredBuildTarget().toString()));
       }
       frontendRunAttempted = true;
 
@@ -183,7 +195,7 @@ class Jsr199JavacInvocation implements Javac.Invocation {
         return 1;
       }
 
-      if (!context.getDirectToJarOutputSettings().isPresent()) {
+      if (!context.getDirectToJarParameters().isPresent()) {
         return 0;
       }
 
@@ -193,10 +205,7 @@ class Jsr199JavacInvocation implements Javac.Invocation {
                   context
                       .getProjectFilesystem()
                       .getPathForRelativePath(
-                          context
-                              .getDirectToJarOutputSettings()
-                              .get()
-                              .getDirectToJarOutputPath())));
+                          context.getDirectToJarParameters().get().getJarPath())));
     } catch (IOException e) {
       LOG.error(e);
       throw new HumanReadableException("IOException during compilation: ", e.getMessage());
@@ -241,7 +250,12 @@ class Jsr199JavacInvocation implements Javac.Invocation {
           Throwables.propagateIfPossible(t.getCause(), IOException.class);
           throw new RuntimeException(t.getCause());
         default:
-          // An error should already have been reported, so we need not do anything.
+          if (buildSuccessful()) {
+            Throwables.propagateIfPossible(t, IOException.class);
+            throw new RuntimeException(t);
+          }
+
+          // An error was already reported, so we need not do anything.
           return;
       }
     }
@@ -301,17 +315,16 @@ class Jsr199JavacInvocation implements Javac.Invocation {
       addCloseable(standardFileManager);
 
       StandardJavaFileManager fileManager;
-      if (context.getDirectToJarOutputSettings().isPresent()) {
+      if (context.getDirectToJarParameters().isPresent()) {
         Path directToJarPath =
             context
                 .getProjectFilesystem()
-                .getPathForRelativePath(
-                    context.getDirectToJarOutputSettings().get().getDirectToJarOutputPath());
+                .getPathForRelativePath(context.getDirectToJarParameters().get().getJarPath());
         inMemoryFileManager =
             new JavaInMemoryFileManager(
                 standardFileManager,
                 directToJarPath,
-                context.getDirectToJarOutputSettings().get().getClassesToRemoveFromJar());
+                context.getDirectToJarParameters().get().getRemoveEntryPredicate());
         addCloseable(inMemoryFileManager);
         fileManager = inMemoryFileManager;
       } else {
@@ -349,18 +362,14 @@ class Jsr199JavacInvocation implements Javac.Invocation {
       PluginClassLoader pluginLoader = loaderFactory.getPluginClassLoader(javacTask);
 
       BuckJavacTaskListener taskListener = null;
-      if (EnumSet.of(
-              JavacCompilationMode.FULL_CHECKING_REFERENCES,
-              JavacCompilationMode.FULL_ENFORCING_REFERENCES)
-          .contains(compilationMode)) {
+      if (abiGenerationMode.checkForSourceOnlyAbiCompatibility() && ruleInfo != null) {
+        ruleInfo.setFileManager(fileManager);
         taskListener =
             SourceBasedAbiStubber.newValidatingTaskListener(
                 pluginLoader,
                 javacTask,
-                new FileManagerBootClasspathOracle(fileManager),
-                compilationMode == JavacCompilationMode.FULL_ENFORCING_REFERENCES
-                    ? Diagnostic.Kind.ERROR
-                    : Diagnostic.Kind.WARNING);
+                ruleInfo,
+                abiGenerationMode.getDiagnosticKindForSourceOnlyAbiCompatibility());
       }
 
       TranslatingJavacPhaseTracer tracer =
@@ -395,18 +404,16 @@ class Jsr199JavacInvocation implements Javac.Invocation {
         .setObserver(new LoggingJarBuilderObserver(context.getEventSink()))
         .setEntriesToJar(
             context
-                .getDirectToJarOutputSettings()
+                .getDirectToJarParameters()
                 .get()
                 .getEntriesToJar()
                 .stream()
                 .map(context.getProjectFilesystem()::resolve))
-        .setMainClass(context.getDirectToJarOutputSettings().get().getMainClass().orElse(null))
-        .setManifestFile(
-            context.getDirectToJarOutputSettings().get().getManifestFile().orElse(null))
+        .setMainClass(context.getDirectToJarParameters().get().getMainClass().orElse(null))
+        .setManifestFile(context.getDirectToJarParameters().get().getManifestFile().orElse(null))
         .setShouldMergeManifests(true)
         .setRemoveEntryPredicate(
-            context.getDirectToJarOutputSettings().get().getClassesToRemoveFromJar()
-                ::shouldRemoveClass);
+            context.getDirectToJarParameters().get().getRemoveEntryPredicate());
   }
 
   @Override

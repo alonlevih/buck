@@ -16,25 +16,25 @@
 
 package com.facebook.buck.jvm.scala;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.jvm.java.ForkMode;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.jvm.java.DefaultJavaLibraryRules;
 import com.facebook.buck.jvm.java.HasJavaAbi;
+import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.jvm.java.JavaOptions;
 import com.facebook.buck.jvm.java.JavaTest;
 import com.facebook.buck.jvm.java.JavaTestDescription;
+import com.facebook.buck.jvm.java.JavacOptions;
+import com.facebook.buck.jvm.java.JavacOptionsFactory;
 import com.facebook.buck.jvm.java.TestType;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.model.MacroException;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
+import com.facebook.buck.model.macros.MacroException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.CellPathResolver;
 import com.facebook.buck.rules.Description;
-import com.facebook.buck.rules.HasContacts;
-import com.facebook.buck.rules.HasTestTimeout;
 import com.facebook.buck.rules.ImplicitDepsInferringDescription;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
@@ -47,13 +47,11 @@ import com.facebook.buck.util.Optionals;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableCollection;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Maps;
 import java.util.Optional;
-import java.util.logging.Level;
 import org.immutables.value.Value;
 
 public class ScalaTestDescription
@@ -64,16 +62,22 @@ public class ScalaTestDescription
       new MacroHandler(ImmutableMap.of("location", new LocationMacroExpander()));
 
   private final ScalaBuckConfig config;
+  private final JavaBuckConfig javaBuckConfig;
+  private final JavacOptions templateJavacOptions;
   private final JavaOptions javaOptions;
   private final Optional<Long> defaultTestRuleTimeoutMs;
   private final CxxPlatform cxxPlatform;
 
   public ScalaTestDescription(
       ScalaBuckConfig config,
+      JavaBuckConfig javaBuckConfig,
+      JavacOptions templateOptions,
       JavaOptions javaOptions,
       Optional<Long> defaultTestRuleTimeoutMs,
       CxxPlatform cxxPlatform) {
     this.config = config;
+    this.javaBuckConfig = javaBuckConfig;
+    this.templateJavacOptions = templateOptions;
     this.javaOptions = javaOptions;
     this.defaultTestRuleTimeoutMs = defaultTestRuleTimeoutMs;
     this.cxxPlatform = cxxPlatform;
@@ -92,8 +96,7 @@ public class ScalaTestDescription
       BuildRuleParams rawParams,
       final BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      ScalaTestDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      ScalaTestDescriptionArg args) {
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     JavaTestDescription.CxxLibraryEnhancement cxxLibraryEnhancement =
         new JavaTestDescription.CxxLibraryEnhancement(
@@ -109,16 +112,21 @@ public class ScalaTestDescription
     BuildTarget javaLibraryBuildTarget =
         buildTarget.withAppendedFlavors(JavaTest.COMPILED_TESTS_LIBRARY_FLAVOR);
 
-    ScalaLibraryBuilder scalaLibraryBuilder =
-        new ScalaLibraryBuilder(
-                targetGraph,
+    JavacOptions javacOptions =
+        JavacOptionsFactory.create(
+            templateJavacOptions, buildTarget, projectFilesystem, resolver, args);
+
+    DefaultJavaLibraryRules scalaLibraryBuilder =
+        ScalaLibraryBuilder.newInstance(
                 javaLibraryBuildTarget,
                 projectFilesystem,
                 params,
                 resolver,
-                cellRoots,
-                config)
-            .setArgs(args);
+                config,
+                javaBuckConfig,
+                args)
+            .setJavacOptions(javacOptions)
+            .build();
 
     if (HasJavaAbi.isAbiTarget(buildTarget)) {
       return scalaLibraryBuilder.buildAbi();
@@ -126,7 +134,7 @@ public class ScalaTestDescription
 
     Function<String, Arg> toMacroArgFunction =
         MacroArg.toMacroArgFunction(MACRO_HANDLER, buildTarget, cellRoots, resolver);
-    JavaLibrary testsLibrary = resolver.addToIndex(scalaLibraryBuilder.build());
+    JavaLibrary testsLibrary = resolver.addToIndex(scalaLibraryBuilder.buildLibrary());
 
     return new JavaTest(
         buildTarget,
@@ -136,7 +144,7 @@ public class ScalaTestDescription
         /* additionalClasspathEntries */ ImmutableSet.of(),
         args.getLabels(),
         args.getContacts(),
-        args.getTestType(),
+        args.getTestType().isPresent() ? args.getTestType().get() : TestType.JUNIT,
         javaOptions.getJavaRuntimeLauncher(),
         args.getVmArgs(),
         cxxLibraryEnhancement.nativeLibsEnvironment,
@@ -172,34 +180,5 @@ public class ScalaTestDescription
   @BuckStyleImmutable
   @Value.Immutable
   interface AbstractScalaTestDescriptionArg
-      extends HasContacts, HasTestTimeout, ScalaLibraryDescription.CoreArg {
-    ImmutableList<String> getVmArgs();
-
-    @Value.Default
-    default TestType getTestType() {
-      return TestType.JUNIT;
-    }
-
-    @Value.Default
-    default boolean getRunTestSeparately() {
-      return false;
-    }
-
-    @Value.Default
-    default ForkMode getForkMode() {
-      return ForkMode.NONE;
-    }
-
-    Optional<Level> getStdErrLogLevel();
-
-    Optional<Level> getStdOutLogLevel();
-
-    Optional<Boolean> getUseCxxLibraries();
-
-    ImmutableSet<BuildTarget> getCxxLibraryWhitelist();
-
-    Optional<Long> getTestCaseTimeoutMs();
-
-    ImmutableMap<String, String> getEnv();
-  }
+      extends ScalaLibraryDescription.CoreArg, JavaTestDescription.CoreArg {}
 }

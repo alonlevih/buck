@@ -18,19 +18,23 @@ package com.facebook.buck.util.autosparse;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
-import com.facebook.buck.cli.FakeBuckConfig;
+import com.facebook.buck.config.FakeBuckConfig;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.BuckEventBusForTests;
-import com.facebook.buck.io.ProjectFilesystemDelegate;
-import com.facebook.buck.io.ProjectFilesystemDelegateFactory;
+import com.facebook.buck.io.filesystem.ProjectFilesystemDelegate;
+import com.facebook.buck.io.filesystem.impl.DefaultProjectFilesystemFactory;
+import com.facebook.buck.io.filesystem.impl.ProjectFilesystemDelegateFactory;
 import com.facebook.buck.testutil.integration.TestDataHelper;
 import com.facebook.buck.timing.FakeClock;
 import com.facebook.buck.util.TestProcessExecutorFactory;
+import com.facebook.buck.util.config.Config;
+import com.facebook.buck.util.config.RawConfig;
 import com.facebook.buck.util.versioncontrol.HgCmdLineInterface;
 import com.facebook.buck.util.versioncontrol.SparseSummary;
 import com.facebook.buck.util.versioncontrol.VersionControlBuckConfig;
 import com.facebook.buck.util.versioncontrol.VersionControlCommandFailedException;
-import com.facebook.buck.zip.Unzip;
+import com.facebook.buck.util.zip.Unzip;
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.eventbus.Subscribe;
@@ -206,7 +210,7 @@ public class AutoSparseIntegrationTest {
     // Only include the parent directory, not the file
     delegate.exists(repoPath.resolve("not_hidden_subdir/file_in_subdir_not_hidden"));
 
-    BuckEventBus eventBus = BuckEventBusForTests.newInstance(new FakeClock(0));
+    BuckEventBus eventBus = BuckEventBusForTests.newInstance(FakeClock.DO_NOT_CARE);
     AutoSparseIntegrationTest.CapturingAutoSparseStateEventListener listener =
         new AutoSparseIntegrationTest.CapturingAutoSparseStateEventListener();
     eventBus.register(listener);
@@ -275,11 +279,16 @@ public class AutoSparseIntegrationTest {
       Path root, boolean enableAutosparse, ImmutableList<String> autosparseIgnore)
       throws InterruptedException {
     String hgCmd = new VersionControlBuckConfig(FakeBuckConfig.builder().build()).getHgCmd();
+    Config config =
+        new Config(
+            RawConfig.of(
+                ImmutableMap.of(
+                    "project",
+                        ImmutableMap.of("enable_autosparse", String.valueOf(enableAutosparse)),
+                    "autosparse",
+                        ImmutableMap.of("ignore", Joiner.on(' ').join(autosparseIgnore)))));
     return ProjectFilesystemDelegateFactory.newInstance(
-        root,
-        root.resolve("buck-out"),
-        hgCmd,
-        AutoSparseConfig.of(enableAutosparse, autosparseIgnore));
+        root, root.resolve("buck-out"), hgCmd, config);
   }
 
   private static Path explodeRepoZip() throws InterruptedException, IOException {
@@ -293,7 +302,10 @@ public class AutoSparseIntegrationTest {
     Files.copy(hgRepoZipPath, hgRepoZipCopyPath, REPLACE_EXISTING);
 
     Unzip.extractZipFile(
-        hgRepoZipCopyPath, repoPath, Unzip.ExistingFileMode.OVERWRITE_AND_CLEAN_DIRECTORIES);
+        new DefaultProjectFilesystemFactory(),
+        hgRepoZipCopyPath,
+        repoPath,
+        Unzip.ExistingFileMode.OVERWRITE_AND_CLEAN_DIRECTORIES);
 
     return repoPath;
   }

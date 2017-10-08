@@ -16,24 +16,26 @@
 
 package com.facebook.buck.distributed;
 
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.config.Config;
-import com.facebook.buck.config.RawConfig;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.distributed.thrift.BuildJobState;
 import com.facebook.buck.distributed.thrift.BuildJobStateBuckConfig;
 import com.facebook.buck.distributed.thrift.BuildJobStateCell;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashes;
 import com.facebook.buck.distributed.thrift.OrderedStringMapEntry;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystemFactory;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.Cell;
 import com.facebook.buck.rules.CellProvider;
 import com.facebook.buck.rules.DefaultCellPathResolver;
 import com.facebook.buck.rules.DistBuildCellParams;
 import com.facebook.buck.rules.KnownBuildRuleTypesFactory;
+import com.facebook.buck.rules.SdkEnvironment;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetGraphAndBuildTargets;
 import com.facebook.buck.util.cache.ProjectFileHashCache;
+import com.facebook.buck.util.config.Config;
+import com.facebook.buck.util.config.RawConfig;
 import com.facebook.buck.util.environment.Architecture;
 import com.facebook.buck.util.environment.Platform;
 import com.google.common.base.Functions;
@@ -96,7 +98,9 @@ public class DistBuildState {
       BuckConfig localBuckConfig, // e.g. the slave's .buckconfig
       BuildJobState jobState,
       Cell rootCell,
-      KnownBuildRuleTypesFactory knownBuildRuleTypesFactory)
+      KnownBuildRuleTypesFactory knownBuildRuleTypesFactory,
+      SdkEnvironment sdkEnvironment,
+      ProjectFilesystemFactory projectFilesystemFactory)
       throws InterruptedException, IOException {
     ProjectFilesystem rootCellFilesystem = rootCell.getFilesystem();
 
@@ -118,7 +122,8 @@ public class DistBuildState {
       Files.createDirectories(cellRoot);
 
       Config config = createConfigFromRemoteAndOverride(remoteCell.getConfig(), localBuckConfig);
-      ProjectFilesystem projectFilesystem = new ProjectFilesystem(cellRoot, config);
+      ProjectFilesystem projectFilesystem =
+          projectFilesystemFactory.createProjectFilesystem(cellRoot, config);
       BuckConfig buckConfig =
           createBuckConfigFromRawConfigAndEnv(
               config, projectFilesystem, ImmutableMap.copyOf(localBuckConfig.getEnvironment()));
@@ -133,7 +138,7 @@ public class DistBuildState {
 
     CellProvider cellProvider =
         CellProvider.createForDistributedBuild(
-            rootCell.getBuckConfig(), cellParams.build(), knownBuildRuleTypesFactory);
+            cellParams.build(), knownBuildRuleTypesFactory, sdkEnvironment);
 
     ImmutableBiMap<Integer, Cell> cells =
         ImmutableBiMap.copyOf(Maps.transformValues(cellIndex.build(), cellProvider::getCellByPath));
@@ -176,7 +181,7 @@ public class DistBuildState {
         Architecture.detect(),
         Platform.detect(),
         ImmutableMap.copyOf(environment),
-        new DefaultCellPathResolver(projectFilesystem.getRootPath(), rawConfig));
+        DefaultCellPathResolver.of(projectFilesystem.getRootPath(), rawConfig));
   }
 
   public ImmutableMap<Integer, Cell> getCells() {
@@ -214,12 +219,13 @@ public class DistBuildState {
       return decoratedCache;
     }
 
-    MaterializerProjectFileHashCache materializer =
-        new MaterializerProjectFileHashCache(decoratedCache, remoteFileHashes, provider);
+    MaterializerDummyFileHashCache materializer =
+        new MaterializerDummyFileHashCache(decoratedCache, remoteFileHashes, provider);
 
     // Create all symlinks and touch all other files.
-    // TODO(alisdair): remove this once action graph doesn't read from file system.
-    materializer.preloadAllFiles();
+    DistBuildConfig remoteConfig = new DistBuildConfig(getRootCell().getBuckConfig());
+    boolean materializeAllFilesDuringPreload = !remoteConfig.materializeSourceFilesOnDemand();
+    materializer.preloadAllFiles(materializeAllFilesDuringPreload);
 
     return materializer;
   }

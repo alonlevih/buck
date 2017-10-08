@@ -17,7 +17,7 @@
 package com.facebook.buck.doctor;
 
 import com.facebook.buck.doctor.config.DoctorConfig;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.util.ProcessExecutor;
 import com.facebook.buck.util.ProcessExecutorParams;
 import com.google.common.collect.ImmutableList;
@@ -82,7 +82,7 @@ public class DefaultExtraInfoCollector implements ExtraInfoCollector {
       Iterable<String> command,
       ProjectFilesystem projectFilesystem,
       ProcessExecutor processExecutor)
-      throws IOException, InterruptedException, ExtraInfoExecutionException {
+      throws InterruptedException, ExtraInfoExecutionException {
 
     ProcessExecutor.Result extraInfoResult;
     try {

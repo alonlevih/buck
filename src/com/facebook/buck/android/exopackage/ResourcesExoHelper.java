@@ -16,8 +16,7 @@
 
 package com.facebook.buck.android.exopackage;
 
-import com.facebook.buck.io.ProjectFilesystem;
-import com.facebook.buck.rules.ExopackageInfo;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.util.MoreCollectors;
 import com.facebook.buck.util.RichStream;
@@ -44,11 +43,11 @@ public class ResourcesExoHelper {
     this.resourcesInfo = resourcesInfo;
   }
 
-  public ImmutableMap<Path, Path> getFilesToInstall() throws Exception {
+  public ImmutableMap<Path, Path> getFilesToInstall() {
     return ExopackageUtil.applyFilenameFormat(getResourceFilesByHash(), RESOURCES_DIR, "%s.apk");
   }
 
-  public ImmutableMap<Path, String> getMetadataToInstall() throws Exception {
+  public ImmutableMap<Path, String> getMetadataToInstall() {
     return ImmutableMap.of(
         RESOURCES_DIR.resolve("metadata.txt"),
         getResourceMetadataContents(getResourceFilesByHash()));

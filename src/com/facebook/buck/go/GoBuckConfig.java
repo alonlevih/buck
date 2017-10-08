@@ -16,8 +16,8 @@
 
 package com.facebook.buck.go;
 
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.io.ExecutableFinder;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.FlavorDomain;
@@ -26,6 +26,7 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.CommandTool;
 import com.facebook.buck.rules.HashedFileTool;
 import com.facebook.buck.rules.Tool;
+import com.facebook.buck.rules.tool.config.ToolConfig;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.MoreCollectors;
 import com.facebook.buck.util.ProcessExecutor;
@@ -151,7 +152,7 @@ public class GoBuckConfig {
   }
 
   Optional<Tool> getGoTestMainGenerator(BuildRuleResolver resolver) {
-    return delegate.getTool(SECTION, "test_main_gen", resolver);
+    return delegate.getView(ToolConfig.class).getTool(SECTION, "test_main_gen", resolver);
   }
 
   ImmutableList<Path> getAssemblerIncludeDirs() {

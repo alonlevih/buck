@@ -16,9 +16,9 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.ObjectFileScrubbers;
-import com.facebook.buck.io.FileContentsScrubber;
-import com.facebook.buck.io.FileScrubber;
+import com.facebook.buck.cxx.toolchain.objectfile.ObjectFileScrubbers;
+import com.facebook.buck.io.file.FileContentsScrubber;
+import com.facebook.buck.io.file.FileScrubber;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;

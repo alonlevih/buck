@@ -19,7 +19,8 @@ package com.facebook.buck.js;
 import static org.junit.Assert.assertThat;
 
 import com.facebook.buck.android.AssumeAndroidPlatform;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.BuildTargets;
@@ -54,7 +55,7 @@ public class AndroidReactNativeLibraryIntegrationTest {
   public void setUp() throws InterruptedException, IOException {
     workspace = TestDataHelper.createProjectWorkspaceForScenario(this, "android_rn", tmpFolder);
     workspace.setUp();
-    filesystem = new ProjectFilesystem(workspace.getDestPath());
+    filesystem = TestProjectFilesystems.createProjectFilesystem(workspace.getDestPath());
   }
 
   @Test
@@ -138,6 +139,15 @@ public class AndroidReactNativeLibraryIntegrationTest {
     assertThat(
         buildLog.getLogEntry("//js:app#bundle,dev").getSuccessType(),
         Matchers.equalTo(Optional.of(BuildRuleSuccessType.FETCHED_FROM_CACHE_MANIFEST_BASED)));
+  }
+
+  @Test
+  public void testNumberOfThreadsDoesNotAffectRuleKey() throws IOException {
+    workspace.runBuckBuild("-c", "build.threads=1", "//js:app").assertSuccess();
+
+    workspace.runBuckBuild("-c", "build.threads=10", "//js:app").assertSuccess();
+    BuckBuildLog buildLog = workspace.getBuildLog();
+    buildLog.assertTargetHadMatchingRuleKey("//js:app");
   }
 
   @Test

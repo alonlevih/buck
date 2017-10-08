@@ -16,13 +16,19 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatforms;
+import com.facebook.buck.cxx.toolchain.HeaderSymlinkTree;
+import com.facebook.buck.cxx.toolchain.HeaderVisibility;
+import com.facebook.buck.cxx.toolchain.InferBuckConfig;
+import com.facebook.buck.cxx.toolchain.LinkerMapMode;
+import com.facebook.buck.cxx.toolchain.StripStyle;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.FlavorDomain;
 import com.facebook.buck.model.Flavored;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -77,16 +83,13 @@ public class CxxBinaryDescription
     this.cxxPlatforms = cxxPlatforms;
   }
 
-  /**
-   * @return a {@link com.facebook.buck.cxx.HeaderSymlinkTree} for the headers of this C/C++ binary.
-   */
+  /** @return a {@link HeaderSymlinkTree} for the headers of this C/C++ binary. */
   public static HeaderSymlinkTree createHeaderSymlinkTreeBuildRule(
       BuildTarget buildTarget,
       ProjectFilesystem projectFilesystem,
       BuildRuleResolver resolver,
       CxxPlatform cxxPlatform,
-      CxxBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      CxxBinaryDescriptionArg args) {
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     return CxxDescriptionEnhancer.createHeaderSymlinkTree(
@@ -131,8 +134,7 @@ public class CxxBinaryDescription
       BuildRuleParams params,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      CxxBinaryDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      CxxBinaryDescriptionArg args) {
     return createBuildRule(
         buildTarget,
         projectFilesystem,
@@ -151,8 +153,7 @@ public class CxxBinaryDescription
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
       CxxBinaryDescriptionArg args,
-      ImmutableSortedSet<BuildTarget> extraCxxDeps)
-      throws NoSuchBuildTargetException {
+      ImmutableSortedSet<BuildTarget> extraCxxDeps) {
 
     // We explicitly remove some flavors below from params to make sure rule
     // has the same output regardless if we will strip or not.
@@ -244,27 +245,24 @@ public class CxxBinaryDescription
     target = CxxStrip.restoreStripStyleFlavorInTarget(target, flavoredStripStyle);
     target = LinkerMapMode.restoreLinkerMapModeFlavorInTarget(target, flavoredLinkerMapMode);
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
-    CxxBinary cxxBinary =
-        new CxxBinary(
-            target,
-            projectFilesystem,
-            new BuildRuleParams(
-                () -> cxxLinkAndCompileRules.deps,
-                () ->
-                    ImmutableSortedSet.<BuildRule>naturalOrder()
-                        .addAll(extraDepsFromOriginalParams.get())
-                        .addAll(cxxLinkAndCompileRules.executable.getDeps(ruleFinder))
-                        .build(),
-                ImmutableSortedSet.of()),
-            resolver,
-            cxxPlatform,
-            cxxLinkAndCompileRules.getBinaryRule(),
-            cxxLinkAndCompileRules.executable,
-            args.getFrameworks(),
-            args.getTests(),
-            target.withoutFlavors(cxxPlatforms.getFlavors()));
-    resolver.addToIndex(cxxBinary);
-    return cxxBinary;
+    return new CxxBinary(
+        target,
+        projectFilesystem,
+        new BuildRuleParams(
+            () -> cxxLinkAndCompileRules.deps,
+            () ->
+                ImmutableSortedSet.<BuildRule>naturalOrder()
+                    .addAll(extraDepsFromOriginalParams.get())
+                    .addAll(cxxLinkAndCompileRules.executable.getDeps(ruleFinder))
+                    .build(),
+            ImmutableSortedSet.of()),
+        resolver,
+        cxxPlatform,
+        cxxLinkAndCompileRules.getBinaryRule(),
+        cxxLinkAndCompileRules.executable,
+        args.getFrameworks(),
+        args.getTests(),
+        target.withoutFlavors(cxxPlatforms.getFlavors()));
   }
 
   @Override
@@ -348,8 +346,7 @@ public class CxxBinaryDescription
       CellPathResolver cellRoots,
       CxxBinaryDescriptionArg args,
       Optional<ImmutableMap<BuildTarget, Version>> selectedVersions,
-      final Class<U> metadataClass)
-      throws NoSuchBuildTargetException {
+      final Class<U> metadataClass) {
     if (!metadataClass.isAssignableFrom(CxxCompilationDatabaseDependencies.class)
         || !buildTarget.getFlavors().contains(CxxCompilationDatabase.COMPILATION_DATABASE)) {
       return Optional.empty();
@@ -386,11 +383,6 @@ public class CxxBinaryDescription
       // we'll default to no flavor, which implicitly builds the default platform.
       return ImmutableSortedSet.of();
     }
-  }
-
-  @Override
-  public boolean isVersionRoot(ImmutableSet<Flavor> flavors) {
-    return true;
   }
 
   public interface CommonArg extends LinkableCxxConstructorArg, HasVersionUniverse, HasDepsQuery {

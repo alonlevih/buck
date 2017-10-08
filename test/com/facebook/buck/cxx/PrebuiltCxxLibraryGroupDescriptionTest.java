@@ -18,9 +18,10 @@ package com.facebook.buck.cxx;
 
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRule;
@@ -29,6 +30,7 @@ import com.facebook.buck.rules.DefaultBuildTargetSourcePath;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.args.SourcePathArg;
@@ -46,7 +48,8 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void exportedPreprocessorFlags() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
     CxxPreprocessorDep lib =
         (CxxPreprocessorDep)
@@ -61,9 +64,10 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void includeDirs() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath includes = new FakeSourcePath("include");
+    SourcePath includes = FakeSourcePath.of("include");
     CxxPreprocessorDep lib =
         (CxxPreprocessorDep)
             new PrebuiltCxxLibraryGroupBuilder(target)
@@ -79,9 +83,10 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void staticLink() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath path = new FakeSourcePath("include");
+    SourcePath path = FakeSourcePath.of("include");
     NativeLinkable lib =
         (NativeLinkable)
             new PrebuiltCxxLibraryGroupBuilder(target)
@@ -103,9 +108,10 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void staticPicLink() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath path = new FakeSourcePath("include");
+    SourcePath path = FakeSourcePath.of("include");
     NativeLinkable lib =
         (NativeLinkable)
             new PrebuiltCxxLibraryGroupBuilder(target)
@@ -127,10 +133,11 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void sharedLink() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath lib1 = new FakeSourcePath("dir/lib1.so");
-    PathSourcePath lib2 = new FakeSourcePath("dir/lib2.so");
+    SourcePath lib1 = FakeSourcePath.of("dir/lib1.so");
+    PathSourcePath lib2 = FakeSourcePath.of("dir/lib2.so");
     NativeLinkable lib =
         (NativeLinkable)
             new PrebuiltCxxLibraryGroupBuilder(target)
@@ -155,7 +162,8 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void exportedDeps() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
     CxxLibrary dep =
         (CxxLibrary)
@@ -173,10 +181,11 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void providedSharedLibs() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath lib1 = new FakeSourcePath("dir/lib1.so");
-    SourcePath lib2 = new FakeSourcePath("dir/lib2.so");
+    SourcePath lib1 = FakeSourcePath.of("dir/lib1.so");
+    SourcePath lib2 = FakeSourcePath.of("dir/lib2.so");
     NativeLinkable lib =
         (NativeLinkable)
             new PrebuiltCxxLibraryGroupBuilder(target)
@@ -199,7 +208,8 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void preferredLinkage() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
 
     NativeLinkable any =
         (NativeLinkable)
@@ -238,10 +248,10 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
         new PrebuiltCxxLibraryGroupBuilder(BuildTargetFactory.newInstance("//:rule"))
             .setStaticLink(ImmutableList.of("$(lib 0)"))
             .setStaticLibs(
-                ImmutableList.of(new DefaultBuildTargetSourcePath(cxxGenruleBuilder.getTarget())));
+                ImmutableList.of(DefaultBuildTargetSourcePath.of(cxxGenruleBuilder.getTarget())));
 
     BuildRuleResolver resolver =
-        new BuildRuleResolver(
+        new SingleThreadedBuildRuleResolver(
             TargetGraphFactory.newInstance(cxxGenruleBuilder.build(), builder.build()),
             new DefaultTargetNodeToBuildRuleTransformer());
 
@@ -257,7 +267,8 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
   @Test
   public void supportedPlatforms() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     CxxLibrary dep1 =
         (CxxLibrary)
             new CxxLibraryBuilder(BuildTargetFactory.newInstance("//:dep")).build(resolver);
@@ -265,8 +276,8 @@ public class PrebuiltCxxLibraryGroupDescriptionTest {
         (CxxLibrary)
             new CxxLibraryBuilder(BuildTargetFactory.newInstance("//:dep2")).build(resolver);
     BuildTarget target = BuildTargetFactory.newInstance("//:lib");
-    SourcePath lib1 = new FakeSourcePath("dir/lib1.so");
-    SourcePath lib2 = new FakeSourcePath("dir/lib2.so");
+    SourcePath lib1 = FakeSourcePath.of("dir/lib1.so");
+    SourcePath lib2 = FakeSourcePath.of("dir/lib2.so");
     BuildRule buildRule =
         new PrebuiltCxxLibraryGroupBuilder(target)
             .setSharedLink(ImmutableList.of("$(lib lib1.so)", "$(lib lib2.so)"))

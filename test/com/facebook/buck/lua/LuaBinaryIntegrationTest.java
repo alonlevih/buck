@@ -22,21 +22,21 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeThat;
 import static org.junit.Assume.assumeTrue;
 
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.config.Config;
-import com.facebook.buck.config.Configs;
-import com.facebook.buck.cxx.CxxBuckConfig;
-import com.facebook.buck.cxx.DefaultCxxPlatforms;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.NativeLinkStrategy;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.DefaultCxxPlatforms;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkStrategy;
 import com.facebook.buck.io.ExecutableFinder;
 import com.facebook.buck.io.FakeExecutableFinder;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultCellPathResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.testutil.ParameterizedTests;
@@ -48,6 +48,8 @@ import com.facebook.buck.util.DefaultProcessExecutor;
 import com.facebook.buck.util.ObjectMappers;
 import com.facebook.buck.util.ProcessExecutor;
 import com.facebook.buck.util.ProcessExecutorParams;
+import com.facebook.buck.util.config.Config;
+import com.facebook.buck.util.config.Configs;
 import com.facebook.buck.util.environment.Architecture;
 import com.facebook.buck.util.environment.Platform;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -109,7 +111,8 @@ public class LuaBinaryIntegrationTest {
 
     // Try to detect if a Lua devel package is available, which is needed to C/C++ support.
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     CxxPlatform cxxPlatform =
         DefaultCxxPlatforms.build(
             Platform.detect(), new CxxBuckConfig(FakeBuckConfig.builder().build()));
@@ -149,9 +152,14 @@ public class LuaBinaryIntegrationTest {
                     "[cxx]",
                     "  sandbox_sources =" + sandboxSources)),
         ".buckconfig");
-    LuaBuckConfig config = getLuaBuckConfig();
-    assertThat(config.getStarterType(), Matchers.equalTo(Optional.of(starterType)));
-    assertThat(config.getNativeLinkStrategy(), Matchers.equalTo(nativeLinkStrategy));
+    LuaPlatform platform =
+        getLuaBuckConfig()
+            .getPlatforms(
+                ImmutableList.of(
+                    CxxPlatformUtils.DEFAULT_PLATFORM.withFlavor(DefaultCxxPlatforms.FLAVOR)))
+            .get(0);
+    assertThat(platform.getStarterType(), Matchers.equalTo(Optional.of(starterType)));
+    assertThat(platform.getNativeLinkStrategy(), Matchers.equalTo(nativeLinkStrategy));
   }
 
   @Test
@@ -314,11 +322,11 @@ public class LuaBinaryIntegrationTest {
     BuckConfig buckConfig =
         new BuckConfig(
             rawConfig,
-            new ProjectFilesystem(tmp.getRoot()),
+            TestProjectFilesystems.createProjectFilesystem(tmp.getRoot()),
             Architecture.detect(),
             Platform.detect(),
             ImmutableMap.of(),
-            new DefaultCellPathResolver(tmp.getRoot(), rawConfig));
+            DefaultCellPathResolver.of(tmp.getRoot(), rawConfig));
     return new LuaBuckConfig(buckConfig, new FakeExecutableFinder(ImmutableList.of()));
   }
 }

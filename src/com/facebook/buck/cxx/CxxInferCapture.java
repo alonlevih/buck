@@ -16,9 +16,10 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.DependencyTrackingMode;
+import com.facebook.buck.cxx.toolchain.DependencyTrackingMode;
+import com.facebook.buck.cxx.toolchain.InferBuckConfig;
 import com.facebook.buck.io.BuildCellRelativePath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
 import com.facebook.buck.rules.AbstractBuildRuleWithDeclaredAndExtraDeps;
@@ -48,7 +49,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 /** Generate the CFG for a source file */
-public class CxxInferCapture extends AbstractBuildRuleWithDeclaredAndExtraDeps
+class CxxInferCapture extends AbstractBuildRuleWithDeclaredAndExtraDeps
     implements SupportsDependencyFileRuleKey {
 
   @AddToRuleKey private final InferBuckConfig inferConfig;
@@ -131,7 +132,7 @@ public class CxxInferCapture extends AbstractBuildRuleWithDeclaredAndExtraDeps
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), resultsDir);
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), resultsDir);
   }
 
   public Path getAbsolutePathToOutput() {

@@ -27,13 +27,15 @@ import static org.junit.Assert.assertTrue;
 
 import com.facebook.buck.apple.xcode.xcodeproj.PBXReference;
 import com.facebook.buck.apple.xcode.xcodeproj.SourceTreePath;
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.cxx.platform.NativeLinkables;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkables;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildRule;
@@ -43,7 +45,7 @@ import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeBuildRule;
 import com.facebook.buck.rules.FakeSourcePath;
-import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -74,7 +76,7 @@ public class CxxLinkableEnhancerTest {
   private static final Path DEFAULT_OUTPUT = Paths.get("libblah.a");
   private static final ImmutableList<Arg> DEFAULT_INPUTS =
       SourcePathArg.from(
-          new FakeSourcePath("a.o"), new FakeSourcePath("b.o"), new FakeSourcePath("c.o"));
+          FakeSourcePath.of("a.o"), FakeSourcePath.of("b.o"), FakeSourcePath.of("c.o"));
   private static final ImmutableSortedSet<NativeLinkable> EMPTY_DEPS = ImmutableSortedSet.of();
   private static final CxxPlatform CXX_PLATFORM =
       CxxPlatformUtils.build(new CxxBuckConfig(FakeBuckConfig.builder().build()));
@@ -110,7 +112,7 @@ public class CxxLinkableEnhancerTest {
         CxxPlatform cxxPlatform,
         Linker.LinkableDepType type,
         boolean forceLinkWhole,
-        ImmutableSet<NativeLinkable.LanguageExtensions> languageExtensions) {
+        ImmutableSet<LanguageExtensions> languageExtensions) {
       return type == Linker.LinkableDepType.STATIC ? staticInput : sharedInput;
     }
 
@@ -142,7 +144,8 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void testThatBuildTargetSourcePathDepsAndPathsArePropagated() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
 
     // Create a couple of genrules to generate inputs for an archive rule.
@@ -179,7 +182,7 @@ public class CxxLinkableEnhancerTest {
             NativeLinkableInput.builder()
                 .setArgs(
                     SourcePathArg.from(
-                        new FakeSourcePath("simple.o"),
+                        FakeSourcePath.of("simple.o"),
                         genrule1.getSourcePathToOutput(),
                         genrule2.getSourcePathToOutput()))
                 .build(),
@@ -193,7 +196,8 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void testThatBuildTargetsFromNativeLinkableDepsContributeToActualDeps() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -246,7 +250,8 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void createCxxLinkableBuildRuleExecutableVsShared() throws Exception {
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(ruleResolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -336,10 +341,11 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void createCxxLinkableBuildRuleStaticVsSharedDeps() throws Exception {
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -426,7 +432,8 @@ public class CxxLinkableEnhancerTest {
             .build();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     BuildRuleResolver ruleResolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(ruleResolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     for (Map.Entry<Linker.LinkableDepType, String> ent : runtimes.entrySet()) {
@@ -463,7 +470,7 @@ public class CxxLinkableEnhancerTest {
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
 
     // Create a native linkable that sits at the bottom of the dep chain.
@@ -497,7 +504,8 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void machOBundleWithBundleLoaderHasExpectedArgs() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
@@ -519,11 +527,11 @@ public class CxxLinkableEnhancerTest {
             /* thinLto */ false,
             EMPTY_DEPS,
             Optional.empty(),
-            Optional.of(new FakeSourcePath(filesystem, "path/to/MyBundleLoader")),
+            Optional.of(FakeSourcePath.of(filesystem, "path/to/MyBundleLoader")),
             ImmutableSet.of(),
             ImmutableSet.of(),
             NativeLinkableInput.builder()
-                .setArgs(SourcePathArg.from(new FakeSourcePath("simple.o")))
+                .setArgs(SourcePathArg.from(FakeSourcePath.of("simple.o")))
                 .build(),
             Optional.empty());
     assertThat(Arg.stringify(cxxLink.getArgs(), pathResolver), hasItem("-bundle"));
@@ -536,7 +544,8 @@ public class CxxLinkableEnhancerTest {
   @Test
   public void machOBundleSourcePathIsInDepsOfRule() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
 
     BuildTarget bundleLoaderTarget = BuildTargetFactory.newInstance("//foo:bundleLoader");
@@ -561,7 +570,7 @@ public class CxxLinkableEnhancerTest {
             ImmutableSet.of(),
             ImmutableSet.of(),
             NativeLinkableInput.builder()
-                .setArgs(SourcePathArg.from(new FakeSourcePath("simple.o")))
+                .setArgs(SourcePathArg.from(FakeSourcePath.of("simple.o")))
                 .build(),
             Optional.empty());
     resolver.addToIndex(bundleLoaderRule);
@@ -587,7 +596,7 @@ public class CxxLinkableEnhancerTest {
             ImmutableSet.of(),
             ImmutableSet.of(),
             NativeLinkableInput.builder()
-                .setArgs(SourcePathArg.from(new FakeSourcePath("another.o")))
+                .setArgs(SourcePathArg.from(FakeSourcePath.of("another.o")))
                 .build(),
             Optional.empty());
 
@@ -601,7 +610,7 @@ public class CxxLinkableEnhancerTest {
     SourcePathResolver resolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
 
     Arg linkerFlags =
@@ -613,7 +622,7 @@ public class CxxLinkableEnhancerTest {
                         Paths.get("Library/Frameworks/XCTest.framework"),
                         Optional.empty())),
                 FrameworkPath.ofSourcePath(
-                    new PathSourcePath(projectFilesystem, Paths.get("Vendor/Bar/Bar.framework")))));
+                    FakeSourcePath.of(projectFilesystem, "Vendor/Bar/Bar.framework"))));
 
     assertEquals(
         ImmutableList.of(

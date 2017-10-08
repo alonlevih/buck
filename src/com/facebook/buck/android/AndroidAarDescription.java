@@ -17,8 +17,14 @@
 package com.facebook.buck.android;
 
 import com.facebook.buck.android.aapt.MergeAndroidResourceSources;
-import com.facebook.buck.cxx.CxxBuckConfig;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.android.apkmodule.APKModule;
+import com.facebook.buck.android.apkmodule.APKModuleGraph;
+import com.facebook.buck.android.packageable.AndroidPackageableCollection;
+import com.facebook.buck.android.packageable.AndroidPackageableCollector;
+import com.facebook.buck.android.toolchain.NdkCxxPlatform;
+import com.facebook.buck.android.toolchain.TargetCpuType;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaBuckConfig;
 import com.facebook.buck.jvm.java.JavaLibrary;
 import com.facebook.buck.jvm.java.JavacFactory;
@@ -26,7 +32,6 @@ import com.facebook.buck.jvm.java.JavacOptions;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.Flavor;
 import com.facebook.buck.model.InternalFlavor;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -40,12 +45,12 @@ import com.facebook.buck.rules.coercer.BuildConfigFields;
 import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.immutables.BuckStyleImmutable;
 import com.google.common.collect.ImmutableCollection;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Ordering;
-import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -75,14 +80,14 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
   private final CxxBuckConfig cxxBuckConfig;
   private final JavaBuckConfig javaBuckConfig;
   private final JavacOptions javacOptions;
-  private final ImmutableMap<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> nativePlatforms;
+  private final ImmutableMap<TargetCpuType, NdkCxxPlatform> nativePlatforms;
 
   public AndroidAarDescription(
       AndroidManifestDescription androidManifestDescription,
       CxxBuckConfig cxxBuckConfig,
       JavaBuckConfig javaBuckConfig,
       JavacOptions javacOptions,
-      ImmutableMap<NdkCxxPlatforms.TargetCpuType, NdkCxxPlatform> nativePlatforms) {
+      ImmutableMap<TargetCpuType, NdkCxxPlatform> nativePlatforms) {
     this.androidManifestDescription = androidManifestDescription;
     this.cxxBuckConfig = cxxBuckConfig;
     this.javaBuckConfig = javaBuckConfig;
@@ -103,8 +108,7 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
       BuildRuleParams originalBuildRuleParams,
       BuildRuleResolver resolver,
       CellPathResolver cellRoots,
-      AndroidAarDescriptionArg args)
-      throws NoSuchBuildTargetException {
+      AndroidAarDescriptionArg args) {
 
     buildTarget.checkUnflavored();
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
@@ -148,36 +152,23 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
         AndroidPackageableCollector.getPackageableRules(originalBuildRuleParams.getBuildDeps()));
     AndroidPackageableCollection packageableCollection = collector.build();
 
-    ImmutableSortedSet<BuildRule> androidResourceDeclaredDeps =
-        AndroidResourceHelper.androidResOnly(originalBuildRuleParams.getDeclaredDeps().get());
-    ImmutableSortedSet<BuildRule> androidResourceExtraDeps =
-        AndroidResourceHelper.androidResOnly(originalBuildRuleParams.getExtraDeps().get());
-
-    BuildRuleParams assembleAssetsParams =
-        originalBuildRuleParams
-            .withDeclaredDeps(androidResourceDeclaredDeps)
-            .withExtraDeps(androidResourceExtraDeps);
     ImmutableCollection<SourcePath> assetsDirectories =
         packageableCollection.getAssetsDirectories();
     AssembleDirectories assembleAssetsDirectories =
         new AssembleDirectories(
             buildTarget.withAppendedFlavors(AAR_ASSEMBLE_ASSETS_FLAVOR),
             projectFilesystem,
-            assembleAssetsParams,
+            ruleFinder,
             assetsDirectories);
     aarExtraDepsBuilder.add(resolver.addToIndex(assembleAssetsDirectories));
 
-    BuildRuleParams assembleResourceParams =
-        originalBuildRuleParams
-            .withDeclaredDeps(androidResourceDeclaredDeps)
-            .withExtraDeps(androidResourceExtraDeps);
     ImmutableCollection<SourcePath> resDirectories =
         packageableCollection.getResourceDetails().getResourceDirectories();
     MergeAndroidResourceSources assembleResourceDirectories =
         new MergeAndroidResourceSources(
             buildTarget.withAppendedFlavors(AAR_ASSEMBLE_RESOURCE_FLAVOR),
             projectFilesystem,
-            assembleResourceParams,
+            ruleFinder,
             resDirectories);
     aarExtraDepsBuilder.add(resolver.addToIndex(assembleResourceDirectories));
 
@@ -237,7 +228,7 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
               JavacFactory.create(ruleFinder, javaBuckConfig, args),
               javacOptions,
               packageableCollection);
-      resolver.addAllToIndex(buildConfigRules);
+      buildConfigRules.forEach(resolver::addToIndex);
       aarExtraDepsBuilder.addAll(buildConfigRules);
       classpathToIncludeInAar.addAll(
           buildConfigRules
@@ -260,17 +251,11 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
             /* nativeLibraryMergeGlue */ Optional.empty(),
             Optional.empty(),
             AndroidBinary.RelinkerMode.DISABLED,
+            ImmutableList.of(),
             apkModuleGraph);
     Optional<ImmutableMap<APKModule, CopyNativeLibraries>> nativeLibrariesOptional =
         packageableGraphEnhancer.enhance(packageableCollection).getCopyNativeLibraries();
-    if (nativeLibrariesOptional.isPresent()
-        && nativeLibrariesOptional.get().containsKey(apkModuleGraph.getRootAPKModule())) {
-      aarExtraDepsBuilder.add(
-          resolver.addToIndex(
-              nativeLibrariesOptional.get().get(apkModuleGraph.getRootAPKModule())));
-    }
-
-    Optional<Path> assembledNativeLibsDir =
+    Optional<CopyNativeLibraries> rootModuleCopyNativeLibraries =
         nativeLibrariesOptional.map(
             input -> {
               // there will be only one value for the root module
@@ -280,8 +265,13 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
                 throw new HumanReadableException(
                     "Native libraries are present but not in the root application module.");
               }
-              return copyNativeLibraries.getPathToNativeLibsDir();
+              aarExtraDepsBuilder.add(copyNativeLibraries);
+              return copyNativeLibraries;
             });
+    Optional<SourcePath> assembledNativeLibsDir =
+        rootModuleCopyNativeLibraries.map(cnl -> cnl.getSourcePathToNativeLibsDir());
+    Optional<SourcePath> assembledNativeLibsAssetsDir =
+        rootModuleCopyNativeLibraries.map(cnl -> cnl.getSourcePathToNativeLibsAssetsDir());
     BuildRuleParams androidAarParams =
         originalBuildRuleParams.withExtraDeps(aarExtraDepsBuilder.build());
     return new AndroidAar(
@@ -293,7 +283,7 @@ public class AndroidAarDescription implements Description<AndroidAarDescriptionA
         assembleResourceDirectories.getSourcePathToOutput(),
         assembleAssetsDirectories.getSourcePathToOutput(),
         assembledNativeLibsDir,
-        ImmutableSet.copyOf(packageableCollection.getNativeLibAssetsDirectories().values()),
+        assembledNativeLibsAssetsDir,
         classpathToIncludeInAar.build());
   }
 

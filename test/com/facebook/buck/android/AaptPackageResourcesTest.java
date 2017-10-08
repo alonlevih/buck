@@ -22,19 +22,17 @@ import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.InternalFlavor;
 import com.facebook.buck.parser.NoSuchBuildTargetException;
-import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
-import com.facebook.buck.rules.PathSourcePath;
 import com.facebook.buck.rules.RuleKey;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
 import com.facebook.buck.rules.TargetGraph;
 import com.facebook.buck.rules.TargetNode;
-import com.facebook.buck.rules.TestBuildRuleParams;
 import com.facebook.buck.rules.coercer.ManifestEntries;
 import com.facebook.buck.rules.keys.DefaultRuleKeyFactory;
 import com.facebook.buck.testutil.FakeFileHashCache;
@@ -57,7 +55,6 @@ public class AaptPackageResourcesTest {
   private SourcePathRuleFinder ruleFinder;
   private SourcePathResolver pathResolver;
   private BuildTarget aaptTarget;
-  private BuildRuleParams params;
   private FakeProjectFilesystem filesystem;
 
   private AndroidResource resource1;
@@ -67,13 +64,13 @@ public class AaptPackageResourcesTest {
 
   SourcePath createPathSourcePath(String path, String contentForHash) {
     hashCache.set(filesystem.resolve(path), HashCode.fromInt(contentForHash.hashCode()));
-    return new FakeSourcePath(filesystem, path);
+    return FakeSourcePath.of(filesystem, path);
   }
 
   FilteredResourcesProvider createIdentifyResourcesProvider(String... paths) {
     return new IdentityResourcesProvider(
         RichStream.from(paths)
-            .map(p -> (SourcePath) new FakeSourcePath(filesystem, p))
+            .map(p -> (SourcePath) FakeSourcePath.of(filesystem, p))
             .toImmutableList());
   }
 
@@ -86,7 +83,7 @@ public class AaptPackageResourcesTest {
                 BuildTargetFactory.newInstance("//:resource1"), filesystem)
             .setRDotJavaPackage("package1")
             .setRes(Paths.get("res1"))
-            .setAssets(new PathSourcePath(filesystem, Paths.get("asset1")))
+            .setAssets(FakeSourcePath.of(filesystem, "asset1"))
             .build();
 
     TargetNode<?, ?> resourceNode2 =
@@ -94,19 +91,19 @@ public class AaptPackageResourcesTest {
                 BuildTargetFactory.newInstance("//:resource2"), filesystem)
             .setRDotJavaPackage("package2")
             .setRes(Paths.get("res2"))
-            .setAssets(new PathSourcePath(filesystem, Paths.get("asset2")))
+            .setAssets(FakeSourcePath.of(filesystem, "asset2"))
             .build();
 
     TargetGraph targetGraph = TargetGraphFactory.newInstance(resourceNode, resourceNode2);
     ruleResolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     resource1 = (AndroidResource) ruleResolver.requireRule(resourceNode.getBuildTarget());
     resource2 = (AndroidResource) ruleResolver.requireRule(resourceNode2.getBuildTarget());
 
     ruleFinder = new SourcePathRuleFinder(ruleResolver);
     pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     aaptTarget = BuildTargetFactory.newInstance("//foo:bar");
-    params = TestBuildRuleParams.create();
 
     hashCache = new FakeFileHashCache(new HashMap<>());
     createPathSourcePath("res1", "resources1");
@@ -213,12 +210,14 @@ public class AaptPackageResourcesTest {
         new ResourcesFilter(
             aaptTarget.withFlavors(InternalFlavor.of("filter")),
             filesystem,
-            params.withDeclaredDeps(ImmutableSortedSet.of(resource1, resource2)).withoutExtraDeps(),
+            ImmutableSortedSet.of(resource1, resource2),
+            ImmutableSortedSet.of(resource1, resource2),
+            ruleFinder,
             ImmutableList.of(resource1.getRes(), resource2.getRes()),
             ImmutableSet.of(),
             ImmutableSet.of(),
             ResourcesFilter.ResourceCompressionMode.DISABLED,
-            FilterResourcesStep.ResourceFilter.EMPTY_FILTER,
+            FilterResourcesSteps.ResourceFilter.EMPTY_FILTER,
             Optional.empty());
 
     previousRuleKey = assertKeyChanged(previousRuleKey, args);
@@ -227,12 +226,14 @@ public class AaptPackageResourcesTest {
         new ResourcesFilter(
             aaptTarget.withFlavors(InternalFlavor.of("filter")),
             filesystem,
-            params.withDeclaredDeps(ImmutableSortedSet.of(resource1, resource2)).withoutExtraDeps(),
+            ImmutableSortedSet.of(resource1, resource2),
+            ImmutableSortedSet.of(resource1, resource2),
+            ruleFinder,
             ImmutableList.of(resource1.getRes(), resource2.getRes()),
             ImmutableSet.of(),
             ImmutableSet.of("some_locale"),
             ResourcesFilter.ResourceCompressionMode.DISABLED,
-            FilterResourcesStep.ResourceFilter.EMPTY_FILTER,
+            FilterResourcesSteps.ResourceFilter.EMPTY_FILTER,
             Optional.empty());
 
     previousRuleKey = assertKeyChanged(previousRuleKey, args);
@@ -262,7 +263,6 @@ public class AaptPackageResourcesTest {
             new AaptPackageResources(
                 aaptTarget,
                 filesystem,
-                params,
                 ruleFinder,
                 ruleResolver,
                 constructorArgs.manifest,

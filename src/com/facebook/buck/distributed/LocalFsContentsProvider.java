@@ -22,13 +22,14 @@ import com.facebook.buck.artifact_cache.CacheResult;
 import com.facebook.buck.artifact_cache.CacheResultType;
 import com.facebook.buck.artifact_cache.DirArtifactCache;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashEntry;
-import com.facebook.buck.io.BorrowablePath;
-import com.facebook.buck.io.LazyPath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.file.BorrowablePath;
+import com.facebook.buck.io.file.LazyPath;
+import com.facebook.buck.io.filesystem.ProjectFilesystemFactory;
 import com.facebook.buck.rules.RuleKey;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,7 +42,9 @@ public class LocalFsContentsProvider implements FileContentsProvider {
 
   private final DirArtifactCache dirCache;
 
-  public LocalFsContentsProvider(Path cacheDirAbsPath) throws InterruptedException, IOException {
+  public LocalFsContentsProvider(
+      ProjectFilesystemFactory projectFilesystemFactory, Path cacheDirAbsPath)
+      throws InterruptedException, IOException {
     Preconditions.checkArgument(
         Files.isDirectory(cacheDirAbsPath),
         "The cache directory must exist. cacheDirAbsPath=[%s]",
@@ -49,24 +52,24 @@ public class LocalFsContentsProvider implements FileContentsProvider {
     this.dirCache =
         new DirArtifactCache(
             CACHE_NAME,
-            new ProjectFilesystem(cacheDirAbsPath),
+            projectFilesystemFactory.createProjectFilesystem(cacheDirAbsPath),
             Paths.get(CACHE_NAME),
             CacheReadMode.READWRITE,
             Optional.empty());
   }
 
   @Override
-  public boolean materializeFileContents(BuildJobStateFileHashEntry entry, Path targetAbsPath)
-      throws IOException {
-    RuleKey key = new RuleKey(entry.getHashCode());
-    CacheResult cacheResult =
-        Futures.getUnchecked(dirCache.fetchAsync(key, LazyPath.ofInstance(targetAbsPath)));
-    return cacheResult.getType() == CacheResultType.HIT;
+  public ListenableFuture<Boolean> materializeFileContentsAsync(
+      BuildJobStateFileHashEntry entry, Path targetAbsPath) {
+    RuleKey key = new RuleKey(entry.getSha1());
+    return Futures.transform(
+        dirCache.fetchAsync(key, LazyPath.ofInstance(targetAbsPath)),
+        (CacheResult result) -> result.getType() == CacheResultType.HIT);
   }
 
   public void writeFileAndGetInputStream(BuildJobStateFileHashEntry entry, Path absPath)
       throws IOException {
-    RuleKey key = new RuleKey(entry.getHashCode());
+    RuleKey key = new RuleKey(entry.getSha1());
     ArtifactInfo artifactInfo = ArtifactInfo.builder().setRuleKeys(ImmutableList.of(key)).build();
     BorrowablePath nonBorrowablePath = BorrowablePath.notBorrowablePath(absPath);
     try {
@@ -75,4 +78,7 @@ public class LocalFsContentsProvider implements FileContentsProvider {
       throw new IOException("Failed to store artifact to DirCache.", e);
     }
   }
+
+  @Override
+  public void close() {}
 }

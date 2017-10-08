@@ -18,14 +18,13 @@ package com.facebook.buck.httpserver;
 
 import static org.junit.Assert.assertTrue;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import java.util.HashMap;
 import java.util.Map;
 import org.eclipse.jetty.server.handler.ContextHandler;
-import org.eclipse.jetty.server.handler.ResourceHandler;
 import org.junit.Test;
 
 public class WebServerTest {
@@ -33,7 +32,7 @@ public class WebServerTest {
   @Test
   public void testCreateHandlersCoversExpectedContextPaths() {
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
-    WebServer webServer = new WebServer(/* port */ 9999, projectFilesystem, "/static/");
+    WebServer webServer = new WebServer(/* port */ 9999, projectFilesystem);
     ImmutableList<ContextHandler> handlers = webServer.createHandlers();
     final Map<String, ContextHandler> contextPathToHandler = new HashMap<>();
     for (ContextHandler handler : handlers) {
@@ -44,7 +43,7 @@ public class WebServerTest {
         contextPath ->
             ((TemplateHandler) contextPathToHandler.get(contextPath).getHandler()).getDelegate();
     assertTrue(getDelegate.apply("/") instanceof IndexHandlerDelegate);
-    assertTrue(contextPathToHandler.get("/static").getHandler() instanceof ResourceHandler);
+    assertTrue(contextPathToHandler.get("/static").getHandler() instanceof StaticResourcesHandler);
     assertTrue(getDelegate.apply("/trace") instanceof TraceHandlerDelegate);
     assertTrue(getDelegate.apply("/traces") instanceof TracesHandlerDelegate);
     assertTrue(contextPathToHandler.get("/tracedata").getHandler() instanceof TraceDataHandler);

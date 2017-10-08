@@ -16,16 +16,19 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Linker;
-import com.facebook.buck.cxx.platform.NativeLinkable;
-import com.facebook.buck.cxx.platform.NativeLinkableInput;
-import com.facebook.buck.cxx.platform.NativeLinkables;
-import com.facebook.buck.io.MorePaths;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxBuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.LinkerMapMode;
+import com.facebook.buck.cxx.toolchain.linker.HasLinkerMap;
+import com.facebook.buck.cxx.toolchain.linker.HasThinLTO;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkable;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkableInput;
+import com.facebook.buck.cxx.toolchain.nativelink.NativeLinkables;
+import com.facebook.buck.io.file.MorePaths;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
-import com.facebook.buck.parser.NoSuchBuildTargetException;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.BuildRuleParams;
 import com.facebook.buck.rules.BuildRuleResolver;
@@ -41,19 +44,19 @@ import com.facebook.buck.rules.coercer.FrameworkPath;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicates;
 import com.google.common.base.Supplier;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Ordering;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class CxxLinkableEnhancer {
   private static final Logger LOG = Logger.get(CxxLinkableEnhancer.class);
@@ -159,8 +162,7 @@ public class CxxLinkableEnhancer {
       ImmutableSet<BuildTarget> blacklist,
       ImmutableSet<BuildTarget> linkWholeDeps,
       NativeLinkableInput immediateLinkableInput,
-      Optional<LinkOutputPostprocessor> postprocessor)
-      throws NoSuchBuildTargetException {
+      Optional<LinkOutputPostprocessor> postprocessor) {
 
     // Soname should only ever be set when linking a "shared" library.
     Preconditions.checkState(!soname.isPresent() || SONAME_REQUIRED_LINK_TYPES.contains(linkType));
@@ -170,24 +172,30 @@ public class CxxLinkableEnhancer {
         !bundleLoader.isPresent() || linkType == Linker.LinkType.MACH_O_BUNDLE);
 
     // Collect and topologically sort our deps that contribute to the link.
-    ImmutableList.Builder<NativeLinkableInput> nativeLinkableInputs = ImmutableList.builder();
-    nativeLinkableInputs.add(immediateLinkableInput);
-    for (NativeLinkable nativeLinkable :
-        Maps.filterKeys(
-                NativeLinkables.getNativeLinkables(cxxPlatform, nativeLinkableDeps, depType),
-                Predicates.not(blacklist::contains))
-            .values()) {
-      NativeLinkable.Linkage link = nativeLinkable.getPreferredLinkage(cxxPlatform);
-      NativeLinkableInput input =
-          nativeLinkable.getNativeLinkableInput(
-              cxxPlatform,
-              NativeLinkables.getLinkStyle(link, depType),
-              linkWholeDeps.contains(nativeLinkable.getBuildTarget()),
-              ImmutableSet.of());
-      LOG.verbose("Native linkable %s returned input %s", nativeLinkable, input);
-      nativeLinkableInputs.add(input);
-    }
-    NativeLinkableInput linkableInput = NativeLinkableInput.concat(nativeLinkableInputs.build());
+    Stream<NativeLinkableInput> nativeLinkableInputs =
+        NativeLinkables.getNativeLinkables(cxxPlatform, nativeLinkableDeps, depType)
+            .entrySet()
+            .stream()
+            .filter(entry -> !blacklist.contains(entry.getKey()))
+            .map(entry -> entry.getValue())
+            .map(
+                nativeLinkable -> {
+                  NativeLinkable.Linkage link = nativeLinkable.getPreferredLinkage(cxxPlatform);
+                  NativeLinkableInput input =
+                      nativeLinkable.getNativeLinkableInput(
+                          cxxPlatform,
+                          NativeLinkables.getLinkStyle(link, depType),
+                          linkWholeDeps.contains(nativeLinkable.getBuildTarget()),
+                          ImmutableSet.of());
+                  LOG.verbose("Native linkable %s returned input %s", nativeLinkable, input);
+                  return input;
+                });
+    nativeLinkableInputs = ruleResolver.maybeParallelize(nativeLinkableInputs);
+    nativeLinkableInputs = Stream.concat(Stream.of(immediateLinkableInput), nativeLinkableInputs);
+    // Construct a list out of the stream rather than passing in an iterable via ::iterator as
+    // the latter will never evaluate stream elements in parallel.
+    NativeLinkableInput linkableInput =
+        NativeLinkableInput.concat(nativeLinkableInputs.collect(Collectors.toList()));
 
     // Build up the arguments to pass to the linker.
     ImmutableList.Builder<Arg> argsBuilder = ImmutableList.builder();

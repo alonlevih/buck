@@ -26,7 +26,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
-import com.facebook.buck.io.MorePaths;
+import com.facebook.buck.io.file.MorePaths;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.ProjectWorkspace.ProcessResult;
 import com.facebook.buck.testutil.integration.TemporaryPaths;
@@ -56,6 +56,11 @@ public class TargetsCommandIntegrationTest {
 
   private static final CharMatcher LOWER_CASE_HEX_DIGITS =
       CharMatcher.inRange('0', '9').or(CharMatcher.inRange('a', 'f'));
+
+  private static final String INCOMPATIBLE_OPTIONS_MSG1 =
+      "option \"--show-target-hash\" cannot be used with the option(s) [--show-rulekey]";
+  private static final String INCOMPATIBLE_OPTIONS_MSG2 =
+      "option \"--show-rulekey (--show_rulekey)\" cannot be used with the option(s) [--show-target-hash]";
 
   @Rule public TemporaryPaths tmp = new TemporaryPaths();
 
@@ -266,26 +271,35 @@ public class TargetsCommandIntegrationTest {
   }
 
   @Test
-  public void testTargetHashAndRuleKeyThrows() throws IOException {
-    thrown.expect(HumanReadableException.class);
-    thrown.expectMessage("Cannot show rule key and target hash at the same time.");
+  public void testTargetHashAndRuleKeyIncompatibility() throws IOException {
     ProjectWorkspace workspace =
         TestDataHelper.createProjectWorkspaceForScenario(this, "output_path", tmp);
     workspace.setUp();
 
-    workspace.runBuckCommand("targets", "--show-target-hash", "--show-rulekey", "//:test");
+    ProcessResult result =
+        workspace.runBuckCommand("targets", "--show-target-hash", "--show-rulekey", "//:test");
+    result.assertFailure();
+    String stderr = result.getStderr();
+    assertTrue(
+        stderr,
+        stderr.contains(INCOMPATIBLE_OPTIONS_MSG1) || stderr.contains(INCOMPATIBLE_OPTIONS_MSG2));
   }
 
   @Test
-  public void testTargetHashAndRuleKeyAndOutputThrows() throws IOException {
-    thrown.expect(HumanReadableException.class);
-    thrown.expectMessage("Cannot show rule key and target hash at the same time.");
+  public void testTargetHashAndRuleKeyAndOutputIncompatibility() throws IOException {
     ProjectWorkspace workspace =
         TestDataHelper.createProjectWorkspaceForScenario(this, "output_path", tmp);
     workspace.setUp();
 
-    workspace.runBuckCommand(
-        "targets", "--show-target-hash", "--show-rulekey", "--show-output", "//:test");
+    ProcessResult result =
+        workspace.runBuckCommand(
+            "targets", "--show-target-hash", "--show-rulekey", "--show-output", "//:test");
+
+    result.assertFailure();
+    String stderr = result.getStderr();
+    assertTrue(
+        stderr,
+        stderr.contains(INCOMPATIBLE_OPTIONS_MSG1) || stderr.contains(INCOMPATIBLE_OPTIONS_MSG2));
   }
 
   @Test
@@ -591,6 +605,10 @@ public class TargetsCommandIntegrationTest {
     String expectedRootPath = MorePaths.pathWithPlatformSeparators(expectedPath);
 
     assertEquals(expectedRootPath, cellPath.asText());
+
+    JsonNode ruleType = targetNode.get("buck.ruleType");
+    assertNotNull(ruleType);
+    assertEquals("genrule", ruleType.asText());
   }
 
   @Test

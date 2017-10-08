@@ -16,6 +16,7 @@
 
 package com.facebook.buck.jvm.java;
 
+import com.facebook.buck.jvm.java.abi.source.api.SourceOnlyAbiRuleInfo;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildRule;
 import com.facebook.buck.rules.RuleKeyObjectSink;
@@ -29,7 +30,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Optional;
+import javax.annotation.Nullable;
 
 /** Fake implementation of {@link Javac} for tests. */
 public class FakeJavac implements Javac {
@@ -71,8 +72,9 @@ public class FakeJavac implements Javac {
       ImmutableList<JavacPluginJsr199Fields> pluginFields,
       ImmutableSortedSet<Path> javaSourceFilePaths,
       Path pathToSrcsList,
-      Optional<Path> workingDirectory,
-      JavacCompilationMode compilationMode) {
+      Path workingDirectory,
+      AbiGenerationMode abiGenerationMode,
+      @Nullable SourceOnlyAbiRuleInfo ruleInfo) {
     return new Invocation() {
       @Override
       public int buildSourceAbiJar(Path sourceAbiJar) throws InterruptedException {
@@ -103,7 +105,7 @@ public class FakeJavac implements Javac {
       ImmutableList<String> options,
       ImmutableSortedSet<Path> javaSourceFilePaths,
       Path pathToSrcsList) {
-    throw new UnsupportedOperationException();
+    return String.format("%sDelimiter%sDelimiter%s", options, javaSourceFilePaths, pathToSrcsList);
   }
 
   @Override

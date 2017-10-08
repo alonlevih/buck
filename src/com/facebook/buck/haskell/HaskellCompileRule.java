@@ -19,11 +19,11 @@ package com.facebook.buck.haskell;
 import com.facebook.buck.cxx.CxxDescriptionEnhancer;
 import com.facebook.buck.cxx.CxxSourceRuleFactory;
 import com.facebook.buck.cxx.CxxToolFlags;
-import com.facebook.buck.cxx.PathShortener;
 import com.facebook.buck.cxx.PreprocessorFlags;
-import com.facebook.buck.cxx.platform.CxxPlatform;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.PathShortener;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.log.Logger;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargets;
@@ -48,6 +48,7 @@ import com.facebook.buck.step.StepExecutionResult;
 import com.facebook.buck.util.MoreIterables;
 import com.facebook.buck.util.Optionals;
 import com.facebook.buck.util.RichStream;
+import com.facebook.buck.util.Verbosity;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
@@ -293,6 +294,11 @@ public class HaskellCompileRule extends AbstractBuildRuleWithDeclaredAndExtraDep
     }
 
     @Override
+    protected boolean shouldPrintStderr(Verbosity verbosity) {
+      return !verbosity.isSilent();
+    }
+
+    @Override
     protected ImmutableList<String> getShellCommandInternal(ExecutionContext context) {
       ImmutableList<String> extraArgs = null;
       if (pic) {
@@ -356,7 +362,7 @@ public class HaskellCompileRule extends AbstractBuildRuleWithDeclaredAndExtraDep
     ImmutableList.Builder<Step> steps = ImmutableList.builder();
 
     steps
-        .add(prepareOutputDir("object", getObjectDir(), getInterfaceSuffix()))
+        .add(prepareOutputDir("object", getObjectDir(), getObjectSuffix()))
         .add(prepareOutputDir("interface", getInterfaceDir(), getInterfaceSuffix()))
         .add(prepareOutputDir("stub", getStubDir(), "h"))
         .add(new GhcStep(getProjectFilesystem().getRootPath(), buildContext));
@@ -371,7 +377,7 @@ public class HaskellCompileRule extends AbstractBuildRuleWithDeclaredAndExtraDep
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), getInterfaceDir());
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), getInterfaceDir());
   }
 
   private String getObjectSuffix() {
@@ -398,7 +404,7 @@ public class HaskellCompileRule extends AbstractBuildRuleWithDeclaredAndExtraDep
     ImmutableList.Builder<SourcePath> objects = ImmutableList.builder();
     for (String module : sources.getModuleNames()) {
       objects.add(
-          new ExplicitBuildTargetSourcePath(
+          ExplicitBuildTargetSourcePath.of(
               getBuildTarget(),
               getObjectDir().resolve(module.replace('.', File.separatorChar) + suffix)));
     }
@@ -410,11 +416,11 @@ public class HaskellCompileRule extends AbstractBuildRuleWithDeclaredAndExtraDep
   }
 
   public SourcePath getInterfaces() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), getInterfaceDir());
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), getInterfaceDir());
   }
 
   public SourcePath getObjectsDir() {
-    return new ExplicitBuildTargetSourcePath(getBuildTarget(), getObjectDir());
+    return ExplicitBuildTargetSourcePath.of(getBuildTarget(), getObjectDir());
   }
 
   @VisibleForTesting

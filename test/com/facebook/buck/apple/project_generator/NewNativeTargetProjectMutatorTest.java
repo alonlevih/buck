@@ -49,9 +49,10 @@ import com.facebook.buck.apple.xcode.xcodeproj.PBXResourcesBuildPhase;
 import com.facebook.buck.apple.xcode.xcodeproj.PBXShellScriptBuildPhase;
 import com.facebook.buck.apple.xcode.xcodeproj.ProductType;
 import com.facebook.buck.apple.xcode.xcodeproj.SourceTreePath;
-import com.facebook.buck.cli.FakeBuckConfig;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.config.FakeBuckConfig;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.js.IosReactNativeLibraryBuilder;
+import com.facebook.buck.js.JsTestScenario;
 import com.facebook.buck.js.ReactNativeBuckConfig;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
@@ -60,7 +61,7 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
-import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -76,6 +77,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
@@ -86,15 +88,19 @@ public class NewNativeTargetProjectMutatorTest {
   private PBXProject generatedProject;
   private PathRelativizer pathRelativizer;
   private SourcePathResolver sourcePathResolver;
+  private BuildRuleResolver buildRuleResolver;
 
   @Before
   public void setUp() {
     assumeTrue(Platform.detect() == Platform.MACOS || Platform.detect() == Platform.LINUX);
     generatedProject = new PBXProject("TestProject");
+    buildRuleResolver =
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     sourcePathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
     pathRelativizer =
         new PathRelativizer(Paths.get("_output"), sourcePathResolver::getRelativePath);
@@ -148,9 +154,9 @@ public class NewNativeTargetProjectMutatorTest {
   public void testSourceGroups() throws NoSuchBuildTargetException {
     NewNativeTargetProjectMutator mutator = mutatorWithCommonDefaults();
 
-    SourcePath foo = new FakeSourcePath("Group1/foo.m");
-    SourcePath bar = new FakeSourcePath("Group1/bar.m");
-    SourcePath baz = new FakeSourcePath("Group2/baz.m");
+    SourcePath foo = FakeSourcePath.of("Group1/foo.m");
+    SourcePath bar = FakeSourcePath.of("Group1/bar.m");
+    SourcePath baz = FakeSourcePath.of("Group2/baz.m");
     mutator.setSourcesWithFlags(
         ImmutableSet.of(
             SourceWithFlags.of(foo),
@@ -180,9 +186,9 @@ public class NewNativeTargetProjectMutatorTest {
   public void testLibraryHeaderGroups() throws NoSuchBuildTargetException {
     NewNativeTargetProjectMutator mutator = mutatorWithCommonDefaults();
 
-    SourcePath foo = new FakeSourcePath("HeaderGroup1/foo.h");
-    SourcePath bar = new FakeSourcePath("HeaderGroup1/bar.h");
-    SourcePath baz = new FakeSourcePath("HeaderGroup2/baz.h");
+    SourcePath foo = FakeSourcePath.of("HeaderGroup1/foo.h");
+    SourcePath bar = FakeSourcePath.of("HeaderGroup1/bar.h");
+    SourcePath baz = FakeSourcePath.of("HeaderGroup2/baz.h");
     mutator.setPublicHeaders(ImmutableSet.of(bar, baz));
     mutator.setPrivateHeaders(ImmutableSet.of(foo));
     NewNativeTargetProjectMutator.Result result =
@@ -210,7 +216,7 @@ public class NewNativeTargetProjectMutatorTest {
   @Test
   public void testPrefixHeaderInSourceGroup() throws NoSuchBuildTargetException {
     NewNativeTargetProjectMutator mutator = mutatorWithCommonDefaults();
-    SourcePath prefixHeader = new FakeSourcePath("Group1/prefix.pch");
+    SourcePath prefixHeader = FakeSourcePath.of("Group1/prefix.pch");
     mutator.setPrefixHeader(Optional.of(prefixHeader));
 
     NewNativeTargetProjectMutator.Result result =
@@ -254,7 +260,7 @@ public class NewNativeTargetProjectMutatorTest {
     AppleResourceDescriptionArg arg =
         AppleResourceDescriptionArg.builder()
             .setName("resources")
-            .setFiles(ImmutableSet.of(new FakeSourcePath("foo.png")))
+            .setFiles(ImmutableSet.of(FakeSourcePath.of("foo.png")))
             .build();
 
     mutator.setRecursiveResources(ImmutableSet.of(arg));
@@ -300,7 +306,8 @@ public class NewNativeTargetProjectMutatorTest {
         XcodePostbuildScriptBuilder.createBuilder(BuildTargetFactory.newInstance("//foo:script"))
             .setCmd("echo \"hello world!\"")
             .build();
-    mutator.setPostBuildRunScriptPhasesFromTargetNodes(ImmutableList.of(postbuildNode));
+    mutator.setPostBuildRunScriptPhasesFromTargetNodes(
+        ImmutableList.of(postbuildNode), x -> buildRuleResolver);
 
     NewNativeTargetProjectMutator.Result result =
         mutator.buildTargetAndAddToProject(generatedProject, true);
@@ -324,7 +331,7 @@ public class NewNativeTargetProjectMutatorTest {
     AppleAssetCatalogDescriptionArg arg =
         AppleAssetCatalogDescriptionArg.builder()
             .setName("some_rule")
-            .setDirs(ImmutableSortedSet.of(new FakeSourcePath("AssetCatalog1.xcassets")))
+            .setDirs(ImmutableSortedSet.of(FakeSourcePath.of("AssetCatalog1.xcassets")))
             .build();
 
     NewNativeTargetProjectMutator mutator = mutatorWithCommonDefaults();
@@ -343,12 +350,13 @@ public class NewNativeTargetProjectMutatorTest {
 
     TargetNode<?, ?> prebuildNode =
         XcodePrebuildScriptBuilder.createBuilder(BuildTargetFactory.newInstance("//foo:script"))
-            .setSrcs(ImmutableSortedSet.of(new FakeSourcePath("script/input.png")))
+            .setSrcs(ImmutableSortedSet.of(FakeSourcePath.of("script/input.png")))
             .setOutputs(ImmutableSortedSet.of("helloworld.txt"))
             .setCmd("echo \"hello world!\"")
             .build();
 
-    mutator.setPostBuildRunScriptPhasesFromTargetNodes(ImmutableList.of(prebuildNode));
+    mutator.setPostBuildRunScriptPhasesFromTargetNodes(
+        ImmutableList.of(prebuildNode), x -> buildRuleResolver);
     NewNativeTargetProjectMutator.Result result =
         mutator.buildTargetAndAddToProject(generatedProject, true);
 
@@ -383,10 +391,11 @@ public class NewNativeTargetProjectMutatorTest {
     TargetNode<?, ?> reactNativeNode =
         IosReactNativeLibraryBuilder.builder(depBuildTarget, buckConfig)
             .setBundleName("Apps/Foo/FooBundle.js")
-            .setEntryPath(new PathSourcePath(filesystem, Paths.get("js/FooApp.js")))
+            .setEntryPath(FakeSourcePath.of(filesystem, "js/FooApp.js"))
             .build();
 
-    mutator.setPostBuildRunScriptPhasesFromTargetNodes(ImmutableList.of(reactNativeNode));
+    mutator.setPostBuildRunScriptPhasesFromTargetNodes(
+        ImmutableList.of(reactNativeNode), x -> buildRuleResolver);
     NewNativeTargetProjectMutator.Result result =
         mutator.buildTargetAndAddToProject(generatedProject, true);
 
@@ -401,9 +410,49 @@ public class NewNativeTargetProjectMutatorTest {
                 + "SOURCE_MAP=${TEMP_DIR}/rn_source_map/Apps/Foo/FooBundle.js.map\n"));
   }
 
-  private NewNativeTargetProjectMutator mutatorWithCommonDefaults() {
+  @Test
+  public void testScriptBuildPhaseWithJsBundle() throws NoSuchBuildTargetException {
+    BuildTarget depBuildTarget = BuildTargetFactory.newInstance("//foo:dep");
+    JsTestScenario scenario =
+        JsTestScenario.builder().bundle(depBuildTarget, ImmutableSortedSet.of()).build();
+
     NewNativeTargetProjectMutator mutator =
-        new NewNativeTargetProjectMutator(pathRelativizer, sourcePathResolver::getRelativePath);
+        mutator(DefaultSourcePathResolver.from(new SourcePathRuleFinder(scenario.resolver)));
+
+    TargetNode<?, ?> jsBundleNode = scenario.targetGraph.get(depBuildTarget);
+
+    mutator.setPostBuildRunScriptPhasesFromTargetNodes(
+        ImmutableList.of(jsBundleNode), x -> scenario.resolver);
+    NewNativeTargetProjectMutator.Result result =
+        mutator.buildTargetAndAddToProject(generatedProject, true);
+
+    PBXShellScriptBuildPhase phase =
+        getSingletonPhaseByType(result.target, PBXShellScriptBuildPhase.class);
+    String shellScript = phase.getShellScript();
+    Path genDir = scenario.filesystem.getBuckPaths().getGenDir().toAbsolutePath();
+    assertEquals(
+        String.format(
+            "BASE_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n"
+                + "mkdir -p \"${BASE_DIR}\"\n\n"
+                + "cp -a \"%s/foo/dep/js/\" \"${BASE_DIR}/\"\n"
+                + "cp -a \"%s/foo/dep/res/\" \"${BASE_DIR}/\"\n",
+            genDir, genDir),
+        shellScript);
+  }
+
+  private NewNativeTargetProjectMutator mutatorWithCommonDefaults() {
+    return mutator(sourcePathResolver, pathRelativizer);
+  }
+
+  private NewNativeTargetProjectMutator mutator(SourcePathResolver pathResolver) {
+    return mutator(
+        pathResolver, new PathRelativizer(Paths.get("_output"), pathResolver::getRelativePath));
+  }
+
+  private NewNativeTargetProjectMutator mutator(
+      SourcePathResolver pathResolver, PathRelativizer relativizer) {
+    NewNativeTargetProjectMutator mutator =
+        new NewNativeTargetProjectMutator(relativizer, pathResolver::getRelativePath);
     mutator
         .setTargetName("TestTarget")
         .setProduct(ProductType.BUNDLE, "TestTargetProduct", Paths.get("TestTargetProduct.bundle"));

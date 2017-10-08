@@ -17,7 +17,7 @@
 package com.facebook.buck.apple;
 
 import com.dd.plist.NSDictionary;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.Tool;
 import com.facebook.buck.step.ExecutionContext;
@@ -105,7 +105,7 @@ class CodeSignStep implements Step {
             processExecutorParams,
             options,
             /* stdin */ Optional.empty(),
-            /* timeOutMs */ Optional.of((long) 120000),
+            /* timeOutMs */ Optional.of((long) 300000),
             /* timeOutHandler */ Optional.empty());
 
     if (result.isTimedOut()) {

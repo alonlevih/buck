@@ -20,10 +20,11 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
 
+import com.facebook.buck.config.FakeBuckConfig;
 import com.facebook.buck.event.BuckEventBus;
 import com.facebook.buck.event.BuckEventBusForTests;
 import com.facebook.buck.event.listener.BroadcastEventListener;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.parser.Parser;
 import com.facebook.buck.parser.ParserConfig;
@@ -36,7 +37,6 @@ import com.facebook.buck.rules.TestCellBuilder;
 import com.facebook.buck.rules.coercer.ConstructorArgMarshaller;
 import com.facebook.buck.rules.coercer.DefaultTypeCoercerFactory;
 import com.facebook.buck.rules.coercer.TypeCoercerFactory;
-import com.facebook.buck.testutil.TestConsole;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.TemporaryPaths;
 import com.facebook.buck.testutil.integration.TestDataHelper;
@@ -71,9 +71,10 @@ public class BuckQueryEnvironmentTest {
         TestDataHelper.createProjectWorkspaceForScenario(this, "query_command", tmp);
     workspace.setUp();
     Cell cell =
-        new TestCellBuilder().setFilesystem(new ProjectFilesystem(workspace.getDestPath())).build();
+        new TestCellBuilder()
+            .setFilesystem(TestProjectFilesystems.createProjectFilesystem(workspace.getDestPath()))
+            .build();
 
-    TestConsole console = new TestConsole();
     TypeCoercerFactory typeCoercerFactory = new DefaultTypeCoercerFactory();
     Parser parser =
         new Parser(
@@ -94,8 +95,7 @@ public class BuckQueryEnvironmentTest {
     TargetPatternEvaluator targetPatternEvaluator =
         new TargetPatternEvaluator(
             cell, FakeBuckConfig.builder().build(), parser, eventBus, /* enableProfiling */ false);
-    OwnersReport.Builder ownersReportBuilder =
-        OwnersReport.builder(cell, parser, eventBus, console);
+    OwnersReport.Builder ownersReportBuilder = OwnersReport.builder(cell, parser, eventBus);
     executor = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor());
     buckQueryEnvironment =
         BuckQueryEnvironment.from(
@@ -134,6 +134,7 @@ public class BuckQueryEnvironmentTest {
             createQueryBuildTarget("//example", "five"),
             createQueryBuildTarget("//example", "six"),
             createQueryBuildTarget("//example", "application-test-lib"),
+            createQueryBuildTarget("//example", "test-lib-lib"),
             createQueryBuildTarget("//example", "one-tests"),
             createQueryBuildTarget("//example", "four-tests"),
             createQueryBuildTarget("//example", "four-application-tests"),

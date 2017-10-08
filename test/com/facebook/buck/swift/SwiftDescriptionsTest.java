@@ -26,6 +26,8 @@ import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
 import com.facebook.buck.rules.DefaultTargetNodeToBuildRuleTransformer;
 import com.facebook.buck.rules.FakeSourcePath;
+import com.facebook.buck.rules.PathSourcePath;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -39,7 +41,8 @@ public class SwiftDescriptionsTest {
   @Test
   public void testPopulateSwiftLibraryDescriptionArg() throws Exception {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(resolver));
     BuildTarget buildTarget = BuildTargetFactory.newInstance("//foo:bar");
@@ -49,11 +52,11 @@ public class SwiftDescriptionsTest {
 
     CxxLibraryDescriptionArg.Builder args = CxxLibraryDescriptionArg.builder().setName("bar");
 
-    FakeSourcePath swiftSrc = new FakeSourcePath("foo/bar.swift");
+    PathSourcePath swiftSrc = FakeSourcePath.of("foo/bar.swift");
 
     args.setSrcs(
         ImmutableSortedSet.of(
-            SourceWithFlags.of(new FakeSourcePath("foo/foo.cpp")), SourceWithFlags.of(swiftSrc)));
+            SourceWithFlags.of(FakeSourcePath.of("foo/foo.cpp")), SourceWithFlags.of(swiftSrc)));
 
     SwiftDescriptions.populateSwiftLibraryDescriptionArg(
         pathResolver, outputBuilder, args.build(), buildTarget);

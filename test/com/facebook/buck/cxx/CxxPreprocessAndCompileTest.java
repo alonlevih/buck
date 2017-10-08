@@ -22,17 +22,17 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cxx.platform.Compiler;
-import com.facebook.buck.cxx.platform.DefaultCompiler;
-import com.facebook.buck.cxx.platform.GccCompiler;
-import com.facebook.buck.cxx.platform.GccPreprocessor;
-import com.facebook.buck.cxx.platform.Preprocessor;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.cxx.toolchain.Compiler;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
+import com.facebook.buck.cxx.toolchain.DefaultCompiler;
+import com.facebook.buck.cxx.toolchain.GccCompiler;
+import com.facebook.buck.cxx.toolchain.GccPreprocessor;
+import com.facebook.buck.cxx.toolchain.Preprocessor;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.rules.BuildContext;
 import com.facebook.buck.rules.BuildRuleParams;
-import com.facebook.buck.rules.BuildRuleResolver;
 import com.facebook.buck.rules.CellPathResolver;
 import com.facebook.buck.rules.CommandTool;
 import com.facebook.buck.rules.DefaultSourcePathResolver;
@@ -43,6 +43,7 @@ import com.facebook.buck.rules.HashedFileTool;
 import com.facebook.buck.rules.PathSourcePath;
 import com.facebook.buck.rules.RuleKey;
 import com.facebook.buck.rules.RuleKeyObjectSink;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -108,7 +109,7 @@ public class CxxPreprocessAndCompileTest {
           .addRuleFlags(StringArg.of("-O3"))
           .build();
   private static final Path DEFAULT_OUTPUT = Paths.get("test.o");
-  private static final SourcePath DEFAULT_INPUT = new FakeSourcePath("test.cpp");
+  private static final SourcePath DEFAULT_INPUT = FakeSourcePath.of("test.cpp");
   private static final CxxSource.Type DEFAULT_INPUT_TYPE = CxxSource.Type.CXX;
   private static final Path DEFAULT_WORKING_DIR = Paths.get(System.getProperty("user.dir"));
   private static final RuleKeyAppendableFunction<FrameworkPath, Path>
@@ -129,7 +130,7 @@ public class CxxPreprocessAndCompileTest {
   public void inputChangesCauseRuleKeyChangesForCompilation() throws Exception {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -284,7 +285,7 @@ public class CxxPreprocessAndCompileTest {
                         DEFAULT_COMPILER,
                         DEFAULT_TOOL_FLAGS),
                     DEFAULT_OUTPUT,
-                    new FakeSourcePath("different"),
+                    FakeSourcePath.of("different"),
                     DEFAULT_INPUT_TYPE,
                     CxxPlatformUtils.DEFAULT_COMPILER_DEBUG_PATH_SANITIZER,
                     Optional.empty()));
@@ -296,7 +297,7 @@ public class CxxPreprocessAndCompileTest {
       throws Exception {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     final SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
@@ -350,8 +351,7 @@ public class CxxPreprocessAndCompileTest {
 
     PreprocessorFlags defaultFlags = PreprocessorFlags.builder().build();
     PreprocessorFlags alteredFlags =
-        defaultFlags.withFrameworkPaths(
-            FrameworkPath.ofSourcePath(new FakeSourcePath("different")));
+        defaultFlags.withFrameworkPaths(FrameworkPath.ofSourcePath(FakeSourcePath.of("different")));
     assertNotEquals(testData.generate(defaultFlags), testData.generate(alteredFlags));
   }
 
@@ -361,7 +361,7 @@ public class CxxPreprocessAndCompileTest {
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
@@ -386,7 +386,7 @@ public class CxxPreprocessAndCompileTest {
                 DEFAULT_COMPILER,
                 flags),
             output,
-            new FakeSourcePath(input.toString()),
+            FakeSourcePath.of(input.toString()),
             DEFAULT_INPUT_TYPE,
             CxxPlatformUtils.DEFAULT_COMPILER_DEBUG_PATH_SANITIZER,
             Optional.empty());
@@ -394,9 +394,9 @@ public class CxxPreprocessAndCompileTest {
     ImmutableList<String> expectedCompileCommand =
         ImmutableList.<String>builder()
             .add("compiler")
+            .add("-x", "c++")
             .add("-ffunction-sections")
             .add("-O3")
-            .add("-x", "c++")
             .add("-c")
             .add(input.toString())
             .add("-o", output.toString())
@@ -411,16 +411,16 @@ public class CxxPreprocessAndCompileTest {
       throws Exception {
     ProjectFilesystem filesystem = FakeProjectFilesystem.createJavaOnlyFilesystem();
     CellPathResolver cellPathResolver = TestCellPathResolver.get(filesystem);
-    SourcePath preprocessor = new PathSourcePath(filesystem, filesystem.getPath("preprocessor"));
+    SourcePath preprocessor = FakeSourcePath.of(filesystem, "preprocessor");
     Tool preprocessorTool = new CommandTool.Builder().addInput(preprocessor).build();
 
-    SourcePath compiler = new PathSourcePath(filesystem, filesystem.getPath("compiler"));
+    SourcePath compiler = FakeSourcePath.of(filesystem, "compiler");
     Tool compilerTool = new CommandTool.Builder().addInput(compiler).build();
 
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     BuildRuleParams params = TestBuildRuleParams.create();
@@ -429,7 +429,7 @@ public class CxxPreprocessAndCompileTest {
     filesystem.writeContentsToPath(
         "test.o: " + pathResolver.getRelativePath(DEFAULT_INPUT) + " ",
         filesystem.getPath("test.o.dep"));
-    FakeSourcePath fakeInput = new FakeSourcePath(filesystem, "test.cpp");
+    PathSourcePath fakeInput = FakeSourcePath.of(filesystem, "test.cpp");
 
     CxxPreprocessAndCompile cxxPreprocess =
         CxxPreprocessAndCompile.preprocessAndCompile(
@@ -485,7 +485,7 @@ public class CxxPreprocessAndCompileTest {
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
@@ -508,7 +508,7 @@ public class CxxPreprocessAndCompileTest {
             params,
             compilerDelegate,
             output,
-            new FakeSourcePath(input.toString()),
+            FakeSourcePath.of(input.toString()),
             DEFAULT_INPUT_TYPE,
             CxxPlatformUtils.DEFAULT_COMPILER_DEBUG_PATH_SANITIZER,
             Optional.empty());
@@ -531,7 +531,7 @@ public class CxxPreprocessAndCompileTest {
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(
             new SourcePathRuleFinder(
-                new BuildRuleResolver(
+                new SingleThreadedBuildRuleResolver(
                     TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer())));
     BuildTarget target = BuildTargetFactory.newInstance("//foo:bar");
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
@@ -561,7 +561,7 @@ public class CxxPreprocessAndCompileTest {
                 COMPILER_WITH_COLOR_SUPPORT,
                 CxxToolFlags.of()),
             output,
-            new FakeSourcePath(input.toString()),
+            FakeSourcePath.of(input.toString()),
             DEFAULT_INPUT_TYPE,
             Optional.empty(),
             CxxPlatformUtils.DEFAULT_COMPILER_DEBUG_PATH_SANITIZER,

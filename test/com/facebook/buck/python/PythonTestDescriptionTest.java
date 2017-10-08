@@ -18,12 +18,12 @@ package com.facebook.buck.python;
 
 import static org.junit.Assert.assertThat;
 
-import com.facebook.buck.cli.FakeBuckConfig;
+import com.facebook.buck.config.FakeBuckConfig;
 import com.facebook.buck.cxx.CxxBinaryBuilder;
-import com.facebook.buck.cxx.CxxPlatformUtils;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
 import com.facebook.buck.io.AlwaysFoundExecutableFinder;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.FlavorDomain;
@@ -37,6 +37,7 @@ import com.facebook.buck.rules.FakeBuildContext;
 import com.facebook.buck.rules.FakeBuildableContext;
 import com.facebook.buck.rules.FakeSourcePath;
 import com.facebook.buck.rules.RuleKey;
+import com.facebook.buck.rules.SingleThreadedBuildRuleResolver;
 import com.facebook.buck.rules.SourcePath;
 import com.facebook.buck.rules.SourcePathResolver;
 import com.facebook.buck.rules.SourcePathRuleFinder;
@@ -56,7 +57,7 @@ import com.facebook.buck.testutil.TargetGraphFactory;
 import com.facebook.buck.util.MoreCollectors;
 import com.facebook.buck.util.RichStream;
 import com.facebook.buck.util.cache.FileHashCacheMode;
-import com.facebook.buck.util.cache.StackedFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
 import com.facebook.buck.versions.Version;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -75,10 +76,11 @@ public class PythonTestDescriptionTest {
     PythonTestBuilder builder =
         PythonTestBuilder.create(BuildTargetFactory.newInstance("//:bin"))
             .setSrcs(
-                SourceList.ofUnnamedSources(ImmutableSortedSet.of(new FakeSourcePath("blah.py"))));
+                SourceList.ofUnnamedSources(ImmutableSortedSet.of(FakeSourcePath.of("blah.py"))));
     TargetGraph targetGraph = TargetGraphFactory.newInstance(builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     PythonTest testRule = builder.build(resolver, filesystem, targetGraph);
     PythonBinary binRule = testRule.getBinary();
     PythonPackageComponents components = binRule.getComponents();
@@ -100,7 +102,7 @@ public class PythonTestDescriptionTest {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:test");
     String sourceName = "main.py";
-    SourcePath source = new FakeSourcePath("foo/" + sourceName);
+    SourcePath source = FakeSourcePath.of("foo/" + sourceName);
 
     // Run without a base module set and verify it defaults to using the build target
     // base name.
@@ -110,7 +112,8 @@ public class PythonTestDescriptionTest {
     TargetGraph normalTargetGraph = TargetGraphFactory.newInstance(normalBuilder.build());
     PythonTest normal =
         normalBuilder.build(
-            new BuildRuleResolver(normalTargetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
+            new SingleThreadedBuildRuleResolver(
+                normalTargetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
             filesystem,
             normalTargetGraph);
     assertThat(
@@ -127,7 +130,7 @@ public class PythonTestDescriptionTest {
         TargetGraphFactory.newInstance(withBaseModuleBuilder.build());
     PythonTest withBaseModule =
         withBaseModuleBuilder.build(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 withBaseModuleTargetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
             filesystem,
             withBaseModuleTargetGraph);
@@ -144,7 +147,8 @@ public class PythonTestDescriptionTest {
     PythonTestBuilder builder = PythonTestBuilder.create(target).setBuildArgs(buildArgs);
     TargetGraph targetGraph = TargetGraphFactory.newInstance(builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathResolver pathResolver =
         DefaultSourcePathResolver.from(new SourcePathRuleFinder(resolver));
     PythonTest test = builder.build(resolver, filesystem, targetGraph);
@@ -162,8 +166,8 @@ public class PythonTestDescriptionTest {
   public void platformSrcs() throws Exception {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:test");
-    SourcePath matchedSource = new FakeSourcePath("foo/a.py");
-    SourcePath unmatchedSource = new FakeSourcePath("foo/b.py");
+    SourcePath matchedSource = FakeSourcePath.of("foo/a.py");
+    SourcePath unmatchedSource = FakeSourcePath.of("foo/b.py");
     PythonTestBuilder builder =
         PythonTestBuilder.create(target)
             .setPlatformSrcs(
@@ -178,7 +182,8 @@ public class PythonTestDescriptionTest {
     TargetGraph targetGraph = TargetGraphFactory.newInstance(builder.build());
     PythonTest test =
         builder.build(
-            new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
+            new SingleThreadedBuildRuleResolver(
+                targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
             filesystem,
             targetGraph);
     assertThat(
@@ -191,8 +196,8 @@ public class PythonTestDescriptionTest {
   public void platformResources() throws Exception {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:test");
-    SourcePath matchedSource = new FakeSourcePath("foo/a.dat");
-    SourcePath unmatchedSource = new FakeSourcePath("foo/b.dat");
+    SourcePath matchedSource = FakeSourcePath.of("foo/a.dat");
+    SourcePath unmatchedSource = FakeSourcePath.of("foo/b.dat");
     PythonTestBuilder builder =
         PythonTestBuilder.create(target)
             .setPlatformResources(
@@ -207,7 +212,8 @@ public class PythonTestDescriptionTest {
     TargetGraph targetGraph = TargetGraphFactory.newInstance(builder.build());
     PythonTest test =
         builder.build(
-            new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
+            new SingleThreadedBuildRuleResolver(
+                targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
             filesystem,
             targetGraph);
     assertThat(
@@ -238,7 +244,8 @@ public class PythonTestDescriptionTest {
         builder
             .setPlatform(platform1.getFlavor().toString())
             .build(
-                new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
+                new SingleThreadedBuildRuleResolver(
+                    targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
                 filesystem,
                 targetGraph);
     assertThat(test1.getBinary().getPythonPlatform(), Matchers.equalTo(platform1));
@@ -246,7 +253,8 @@ public class PythonTestDescriptionTest {
         builder
             .setPlatform(platform2.getFlavor().toString())
             .build(
-                new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
+                new SingleThreadedBuildRuleResolver(
+                    targetGraph, new DefaultTargetNodeToBuildRuleTransformer()),
                 filesystem,
                 targetGraph);
     assertThat(test2.getBinary().getPythonPlatform(), Matchers.equalTo(platform2));
@@ -269,7 +277,8 @@ public class PythonTestDescriptionTest {
           TargetGraphFactory.newInstance(
               cxxBinaryBuilder.build(), pythonLibraryBuilder.build(), pythonTestBuilder.build());
       BuildRuleResolver resolver =
-          new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(
+              targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
       BuildRule cxxBinary = cxxBinaryBuilder.build(resolver, filesystem, targetGraph);
       pythonLibraryBuilder.build(resolver, filesystem, targetGraph);
       PythonTest pythonTest = pythonTestBuilder.build(resolver, filesystem, targetGraph);
@@ -288,14 +297,17 @@ public class PythonTestDescriptionTest {
             .setPackageStyle(PythonBuckConfig.PackageStyle.INPLACE);
     TargetGraph targetGraph = TargetGraphFactory.newInstance(builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     PythonTest pythonTest = builder.build(resolver, filesystem, targetGraph);
     assertThat(pythonTest.getBinary(), Matchers.instanceOf(PythonInPlaceBinary.class));
     builder =
         PythonTestBuilder.create(BuildTargetFactory.newInstance("//:bin"))
             .setPackageStyle(PythonBuckConfig.PackageStyle.STANDALONE);
     targetGraph = TargetGraphFactory.newInstance(builder.build());
-    resolver = new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+    resolver =
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     pythonTest = builder.build(resolver, filesystem, targetGraph);
     assertThat(pythonTest.getBinary(), Matchers.instanceOf(PythonPackagedBinary.class));
   }
@@ -305,7 +317,7 @@ public class PythonTestDescriptionTest {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     ShBinaryBuilder pexExecutorBuilder =
         new ShBinaryBuilder(BuildTargetFactory.newInstance("//:pex_executor"))
-            .setMain(new FakeSourcePath("run.sh"));
+            .setMain(FakeSourcePath.of("run.sh"));
     PythonTestBuilder builder =
         new PythonTestBuilder(
             BuildTargetFactory.newInstance("//:bin"),
@@ -325,7 +337,8 @@ public class PythonTestDescriptionTest {
     TargetGraph targetGraph =
         TargetGraphFactory.newInstance(pexExecutorBuilder.build(), builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     ShBinary pexExecutor = pexExecutorBuilder.build(resolver);
     PythonTest binary = builder.build(resolver, filesystem, targetGraph);
     assertThat(
@@ -339,7 +352,7 @@ public class PythonTestDescriptionTest {
   public void pexExecutorRuleIsAddedToParseTimeDeps() throws Exception {
     ShBinaryBuilder pexExecutorBuilder =
         new ShBinaryBuilder(BuildTargetFactory.newInstance("//:pex_executor"))
-            .setMain(new FakeSourcePath("run.sh"));
+            .setMain(FakeSourcePath.of("run.sh"));
     PythonTestBuilder builder =
         new PythonTestBuilder(
             BuildTargetFactory.newInstance("//:bin"),
@@ -395,8 +408,8 @@ public class PythonTestDescriptionTest {
   public void versionedSrcs() throws Exception {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:lib");
-    SourcePath matchedSource = new FakeSourcePath("foo/a.py");
-    SourcePath unmatchedSource = new FakeSourcePath("foo/b.py");
+    SourcePath matchedSource = FakeSourcePath.of("foo/a.py");
+    SourcePath unmatchedSource = FakeSourcePath.of("foo/b.py");
     GenruleBuilder depBuilder =
         GenruleBuilder.newGenruleBuilder(BuildTargetFactory.newInstance("//:dep")).setOut("out");
     PythonTestBuilder builder =
@@ -413,7 +426,8 @@ public class PythonTestDescriptionTest {
             .setSelectedVersions(ImmutableMap.of(depBuilder.getTarget(), Version.of("1.0")));
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depBuilder.build(), builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     depBuilder.build(resolver, filesystem, targetGraph);
     PythonTest test = builder.build(resolver, filesystem, targetGraph);
     assertThat(
@@ -426,8 +440,8 @@ public class PythonTestDescriptionTest {
   public void versionedResources() throws Exception {
     ProjectFilesystem filesystem = new FakeProjectFilesystem();
     BuildTarget target = BuildTargetFactory.newInstance("//foo:lib");
-    SourcePath matchedSource = new FakeSourcePath("foo/a.py");
-    SourcePath unmatchedSource = new FakeSourcePath("foo/b.py");
+    SourcePath matchedSource = FakeSourcePath.of("foo/a.py");
+    SourcePath unmatchedSource = FakeSourcePath.of("foo/b.py");
     GenruleBuilder depBuilder =
         GenruleBuilder.newGenruleBuilder(BuildTargetFactory.newInstance("//:dep")).setOut("out");
     PythonTestBuilder builder =
@@ -444,7 +458,8 @@ public class PythonTestDescriptionTest {
             .setSelectedVersions(ImmutableMap.of(depBuilder.getTarget(), Version.of("1.0")));
     TargetGraph targetGraph = TargetGraphFactory.newInstance(depBuilder.build(), builder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     depBuilder.build(resolver, filesystem, targetGraph);
     PythonTest test = builder.build(resolver, filesystem, targetGraph);
     assertThat(
@@ -464,7 +479,8 @@ public class PythonTestDescriptionTest {
               .setPackageStyle(packageStyle);
       TargetGraph targetGraph = TargetGraphFactory.newInstance(pythonTestBuilder.build());
       BuildRuleResolver resolver =
-          new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+          new SingleThreadedBuildRuleResolver(
+              targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
       PythonTest pythonTestWithoutDep = pythonTestBuilder.build(resolver, filesystem, targetGraph);
       RuleKey ruleKeyWithoutDep = calculateRuleKey(resolver, pythonTestWithoutDep);
 
@@ -474,7 +490,9 @@ public class PythonTestDescriptionTest {
       pythonTestBuilder.setDeps(ImmutableSortedSet.of(cxxBinaryBuilder.getTarget()));
       targetGraph =
           TargetGraphFactory.newInstance(cxxBinaryBuilder.build(), pythonTestBuilder.build());
-      resolver = new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+      resolver =
+          new SingleThreadedBuildRuleResolver(
+              targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
       cxxBinaryBuilder.build(resolver, filesystem, targetGraph);
       PythonTest pythonBinaryWithDep = pythonTestBuilder.build(resolver, filesystem, targetGraph);
       RuleKey ruleKeyWithDep = calculateRuleKey(resolver, pythonBinaryWithDep);
@@ -486,11 +504,11 @@ public class PythonTestDescriptionTest {
 
   @Test
   public void platformDeps() throws Exception {
-    SourcePath libASrc = new FakeSourcePath("libA.py");
+    SourcePath libASrc = FakeSourcePath.of("libA.py");
     PythonLibraryBuilder libraryABuilder =
         PythonLibraryBuilder.createBuilder(BuildTargetFactory.newInstance("//:libA"))
             .setSrcs(SourceList.ofUnnamedSources(ImmutableSortedSet.of(libASrc)));
-    SourcePath libBSrc = new FakeSourcePath("libB.py");
+    SourcePath libBSrc = FakeSourcePath.of("libB.py");
     PythonLibraryBuilder libraryBBuilder =
         PythonLibraryBuilder.createBuilder(BuildTargetFactory.newInstance("//:libB"))
             .setSrcs(SourceList.ofUnnamedSources(ImmutableSortedSet.of(libBSrc)));
@@ -511,7 +529,8 @@ public class PythonTestDescriptionTest {
         TargetGraphFactory.newInstance(
             libraryABuilder.build(), libraryBBuilder.build(), binaryBuilder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     PythonTest test = (PythonTest) resolver.requireRule(binaryBuilder.getTarget());
     assertThat(
         test.getBinary().getComponents().getModules().values(),
@@ -526,14 +545,14 @@ public class PythonTestDescriptionTest {
         CxxPlatformUtils.DEFAULT_PLATFORM.withFlavor(InternalFlavor.of("platB"));
     FlavorDomain<CxxPlatform> cxxPlatforms =
         FlavorDomain.from("C/C++ platform", ImmutableList.of(platformA, platformB));
-    SourcePath libASrc = new FakeSourcePath("libA.py");
+    SourcePath libASrc = FakeSourcePath.of("libA.py");
     PythonLibraryBuilder libraryABuilder =
         new PythonLibraryBuilder(
                 BuildTargetFactory.newInstance("//:libA"),
                 PythonTestUtils.PYTHON_PLATFORMS,
                 cxxPlatforms)
             .setSrcs(SourceList.ofUnnamedSources(ImmutableSortedSet.of(libASrc)));
-    SourcePath libBSrc = new FakeSourcePath("libB.py");
+    SourcePath libBSrc = FakeSourcePath.of("libB.py");
     PythonLibraryBuilder libraryBBuilder =
         new PythonLibraryBuilder(
                 BuildTargetFactory.newInstance("//:libB"),
@@ -561,7 +580,8 @@ public class PythonTestDescriptionTest {
         TargetGraphFactory.newInstance(
             libraryABuilder.build(), libraryBBuilder.build(), binaryBuilder.build());
     BuildRuleResolver resolver =
-        new BuildRuleResolver(targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            targetGraph, new DefaultTargetNodeToBuildRuleTransformer());
     PythonTest test = (PythonTest) resolver.requireRule(binaryBuilder.getTarget());
     assertThat(
         test.getBinary().getComponents().getModules().values(),

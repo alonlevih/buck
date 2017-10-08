@@ -16,7 +16,7 @@
 
 package com.facebook.buck.cxx;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.BuildContext;
 import com.facebook.buck.rules.BuildRule;
@@ -63,7 +63,7 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 @SuppressWarnings("PMD.TestClassWithoutTestCases")
-public class CxxGtestTest extends CxxTest implements HasRuntimeDeps, ExternalTestRunnerRule {
+class CxxGtestTest extends CxxTest implements HasRuntimeDeps, ExternalTestRunnerRule {
 
   private static final Pattern START = Pattern.compile("^\\[\\s*RUN\\s*\\] (.*)$");
   private static final Pattern END = Pattern.compile("^\\[\\s*(FAILED|OK)\\s*\\] .*");
@@ -108,7 +108,7 @@ public class CxxGtestTest extends CxxTest implements HasRuntimeDeps, ExternalTes
 
   @Override
   public SourcePath getSourcePathToOutput() {
-    return new ForwardingBuildTargetSourcePath(
+    return ForwardingBuildTargetSourcePath.of(
         getBuildTarget(), Preconditions.checkNotNull(binary.getSourcePathToOutput()));
   }
 

@@ -19,7 +19,7 @@ package com.facebook.buck.distributed;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashEntry;
 import com.facebook.buck.distributed.thrift.BuildJobStateFileHashes;
 import com.facebook.buck.io.ArchiveMemberPath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.util.cache.ProjectFileHashCache;
 import com.google.common.base.Function;
 import com.google.common.collect.Maps;
@@ -33,10 +33,10 @@ public class RemoteStateBasedFileHashCache implements ProjectFileHashCache {
   private static final Function<BuildJobStateFileHashEntry, HashCode>
       HASH_CODE_FROM_FILE_HASH_ENTRY =
           input -> {
-            if (input.getHashCode() == null) {
+            if (input.getSha1() == null) {
               return null;
             }
-            return HashCode.fromString(input.getHashCode());
+            return HashCode.fromString(input.getSha1());
           };
 
   private final ProjectFileHashCache delegate;

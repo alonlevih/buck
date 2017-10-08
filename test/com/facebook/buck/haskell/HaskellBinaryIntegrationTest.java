@@ -19,7 +19,7 @@ package com.facebook.buck.haskell;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assume.assumeThat;
 
-import com.facebook.buck.cxx.platform.Linker;
+import com.facebook.buck.cxx.toolchain.linker.Linker;
 import com.facebook.buck.testutil.integration.ProjectWorkspace;
 import com.facebook.buck.testutil.integration.TemporaryPaths;
 import com.facebook.buck.testutil.integration.TestDataHelper;
@@ -123,12 +123,6 @@ public class HaskellBinaryIntegrationTest {
         workspace.runBuckCommand("run", "//:hs_header#default," + getLinkFlavor());
     result.assertSuccess();
     assertThat(result.getStdout(), Matchers.equalTo("hello"));
-
-    // Now modify the header, and verify this gets reflected in the rebuilt binary.
-    workspace.replaceFileContents("header.h", "hello", "good bye");
-    result = workspace.runBuckCommand("run", "//:hs_header#default," + getLinkFlavor());
-    result.assertSuccess();
-    assertThat(result.getStdout(), Matchers.equalTo("good bye"));
   }
 
   @Test

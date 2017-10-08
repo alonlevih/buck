@@ -17,8 +17,10 @@
 package com.facebook.buck.cli;
 
 import com.facebook.buck.apple.project_generator.XCodeProjectCommandHelper;
+import com.facebook.buck.cli.output.PrintStreamPathOutputPresenter;
 import com.facebook.buck.cli.parameter_extractors.ProjectGeneratorParameters;
 import com.facebook.buck.cli.parameter_extractors.ProjectViewParameters;
+import com.facebook.buck.config.BuckConfig;
 import com.facebook.buck.event.ProjectGenerationEvent;
 import com.facebook.buck.ide.intellij.IjProjectBuckConfig;
 import com.facebook.buck.ide.intellij.IjProjectCommandHelper;
@@ -31,6 +33,7 @@ import com.facebook.buck.util.HumanReadableException;
 import com.facebook.buck.util.ListeningProcessExecutor;
 import com.facebook.buck.util.MoreCollectors;
 import com.facebook.buck.util.ProcessExecutorParams;
+import com.facebook.buck.util.Verbosity;
 import com.google.common.base.Ascii;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
@@ -38,7 +41,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import java.io.IOException;
-import java.nio.channels.Channels;
 import java.nio.file.Paths;
 import java.util.Optional;
 import javax.annotation.Nonnull;
@@ -223,11 +225,13 @@ public class ProjectCommand extends BuildCommand {
   @Option(
     name = "--view",
     usage =
-        "New command to build a 'project view', which is a directory outside the "
-            + "repo, containing symlinks in to the repo. This directory looks a lot like a standard "
-            + "IntelliJ project with all resources under /res, but what's really important is that it "
-            + "generates a single IntelliJ module, so that editing is much faster than when you use "
-            + "`buck project`."
+        "Option that builds a Project View which is a directory containing symlinks to a single"
+            + " project's code and resources. This directory looks a lot like a standard IntelliJ "
+            + "project with all resources under /res, but what's really important is that it "
+            + "generates a single IntelliJ module, so that editing is much faster than when you "
+            + "use 'plain' `buck project`.\n"
+            + "\n"
+            + "This option specifies the path to the Project View directory."
   )
   @Nullable
   private String projectView = null;
@@ -268,7 +272,7 @@ public class ProjectCommand extends BuildCommand {
     try (CommandThreadManager pool =
         new CommandThreadManager("Project", getConcurrencyLimit(params.getBuckConfig()))) {
 
-      ListeningExecutorService executor = pool.getExecutor();
+      ListeningExecutorService executor = pool.getListeningExecutorService();
 
       params.getBuckEventBus().post(ProjectGenerationEvent.started());
       int result;
@@ -288,34 +292,24 @@ public class ProjectCommand extends BuildCommand {
                     includeTransitiveDependencies,
                     skipBuild || !build);
 
-            ProjectViewParametersImplementation projectView =
+            ProjectViewParameters projectViewParameters =
                 new ProjectViewParametersImplementation(params);
-            if (projectView.hasViewPath() && !projectView.isValidViewPath()) {
-              projectView
-                  .getStdErr()
-                  .printf(
-                      "\nView directory %s is under the repo directory\n",
-                      projectView.getViewPath());
-              result = 1;
-            } else {
-              IjProjectCommandHelper projectCommandHelper =
-                  new IjProjectCommandHelper(
-                      params.getBuckEventBus(),
-                      executor,
-                      params.getBuckConfig(),
-                      params.getActionGraphCache(),
-                      params.getVersionedTargetGraphCache(),
-                      params.getTypeCoercerFactory(),
-                      params.getCell(),
-                      projectConfig,
-                      getEnableParserProfiling(),
-                      (buildTargets, disableCaching) ->
-                          runBuild(params, buildTargets, disableCaching),
-                      arguments ->
-                          parseArgumentsAsTargetNodeSpecs(params.getBuckConfig(), arguments),
-                      projectView);
-              result = projectCommandHelper.parseTargetsAndRunProjectGenerator(getArguments());
-            }
+            IjProjectCommandHelper projectCommandHelper =
+                new IjProjectCommandHelper(
+                    params.getBuckEventBus(),
+                    executor,
+                    params.getBuckConfig(),
+                    params.getActionGraphCache(),
+                    params.getVersionedTargetGraphCache(),
+                    params.getTypeCoercerFactory(),
+                    params.getCell(),
+                    projectConfig,
+                    getEnableParserProfiling(),
+                    (buildTargets, disableCaching) ->
+                        runBuild(params, buildTargets, disableCaching),
+                    arguments -> parseArgumentsAsTargetNodeSpecs(params.getBuckConfig(), arguments),
+                    projectViewParameters);
+            result = projectCommandHelper.parseTargetsAndRunProjectGenerator(getArguments());
             break;
           case XCODE:
             XCodeProjectCommandHelper xcodeProjectCommandHelper =
@@ -339,6 +333,10 @@ public class ProjectCommand extends BuildCommand {
                     combinedProject,
                     dryRun,
                     getReadOnly(params.getBuckConfig()),
+                    new PrintStreamPathOutputPresenter(
+                        params.getConsole().getStdOut(),
+                        this.getOutputMode(),
+                        params.getCell().getRoot()),
                     arguments -> parseArgumentsAsTargetNodeSpecs(params.getBuckConfig(), arguments),
                     arguments -> {
                       try {
@@ -418,8 +416,8 @@ public class ProjectCommand extends BuildCommand {
         new ForwardingProcessListener(
             // Using rawStream to avoid shutting down SuperConsole. This is safe to do
             // because this process finishes before we start parsing process.
-            Channels.newChannel(params.getConsole().getStdOut().getRawStream()),
-            Channels.newChannel(params.getConsole().getStdErr().getRawStream()));
+            params.getConsole().getStdOut().getRawStream(),
+            params.getConsole().getStdErr().getRawStream());
     ListeningProcessExecutor.LaunchedProcess process =
         processExecutor.launchProcess(processExecutorParams, processListener);
     try {
@@ -494,6 +492,11 @@ public class ProjectCommand extends BuildCommand {
     public boolean isProcessAnnotations() {
       return processAnnotations;
     }
+
+    @Override
+    public Verbosity getVerbosity() {
+      return getConsole().getVerbosity();
+    }
   }
 
   private class ProjectViewParametersImplementation extends ProjectGeneratorParametersImplementation
@@ -505,7 +508,7 @@ public class ProjectCommand extends BuildCommand {
 
     @Override
     public boolean hasViewPath() {
-      return projectView != null;
+      return projectView != null && !projectView.trim().isEmpty(); // --view '' is possible
     }
 
     @Override

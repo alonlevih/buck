@@ -16,7 +16,7 @@
 
 package com.facebook.buck.js;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.shell.WorkerShellStep;
 import com.facebook.buck.worker.WorkerJobParams;
 import com.facebook.buck.worker.WorkerProcessParams;
@@ -28,7 +28,7 @@ import java.util.Optional;
 
 public class ReactNativeBundleWorkerStep extends WorkerShellStep {
 
-  public ReactNativeBundleWorkerStep(
+  ReactNativeBundleWorkerStep(
       ProjectFilesystem filesystem,
       Path tmpDir,
       ImmutableList<String> jsPackagerCommand,

@@ -16,7 +16,7 @@
 
 package com.facebook.buck.util.autosparse;
 
-import com.facebook.buck.config.Config;
+import com.facebook.buck.util.config.Config;
 import com.facebook.buck.util.immutables.BuckStyleTuple;
 import com.google.common.collect.ImmutableSet;
 import java.nio.file.Path;
@@ -44,7 +44,10 @@ public abstract class AbstractAutoSparseConfig {
 
   public static AutoSparseConfig of(Config config) {
     return AutoSparseConfig.of(
-        config.getBooleanValue("project", "enable_autosparse", false),
-        config.getListWithoutComments("autosparse", "ignore"));
+        isAutosparseEnabled(config), config.getListWithoutComments("autosparse", "ignore"));
+  }
+
+  public static boolean isAutosparseEnabled(Config config) {
+    return config.getBooleanValue("project", "enable_autosparse", false);
   }
 }

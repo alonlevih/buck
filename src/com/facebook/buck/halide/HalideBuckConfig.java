@@ -16,8 +16,8 @@
 
 package com.facebook.buck.halide;
 
-import com.facebook.buck.cli.BuckConfig;
-import com.facebook.buck.cxx.platform.CxxPlatform;
+import com.facebook.buck.config.BuckConfig;
+import com.facebook.buck.cxx.toolchain.CxxPlatform;
 import com.facebook.buck.util.HumanReadableException;
 import com.google.common.collect.ImmutableMap;
 import java.nio.file.Path;

@@ -20,6 +20,7 @@ import static com.facebook.buck.jvm.java.JavaCompilationConstants.ANDROID_JAVAC_
 import static com.facebook.buck.jvm.java.JavaCompilationConstants.DEFAULT_JAVA_CONFIG;
 
 import com.facebook.buck.jvm.java.JavaBuckConfig;
+import com.facebook.buck.jvm.java.JavaConfiguredCompilerFactory;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.rules.AbstractNodeBuilder;
 import com.facebook.buck.rules.PathSourcePath;
@@ -35,7 +36,9 @@ public class AndroidLibraryBuilder
         AndroidLibraryDescription, AndroidLibrary> {
 
   private static final AndroidLibraryCompilerFactory JAVA_ONLY_COMPILER_FACTORY =
-      language -> new JavaAndroidLibraryCompiler(DEFAULT_JAVA_CONFIG);
+      language ->
+          new JavaConfiguredCompilerFactory(
+              DEFAULT_JAVA_CONFIG, AndroidClasspathFromContextFunction.INSTANCE);
 
   private AndroidLibraryBuilder(BuildTarget target, JavaBuckConfig javaBuckConfig) {
     super(
@@ -89,7 +92,7 @@ public class AndroidLibraryBuilder
   }
 
   public AndroidLibraryBuilder addSrc(Path path) {
-    getArgForPopulating().addSrcs(new PathSourcePath(new FakeProjectFilesystem(), path));
+    getArgForPopulating().addSrcs(PathSourcePath.of(new FakeProjectFilesystem(), path));
     return this;
   }
 }

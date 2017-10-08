@@ -25,8 +25,8 @@ import com.facebook.buck.rules.keys.RuleKeyAndInputs;
 import com.facebook.buck.rules.keys.RuleKeyDiagnostics;
 import com.facebook.buck.rules.keys.RuleKeyFactories;
 import com.facebook.buck.rules.keys.SizeLimiter;
-import com.facebook.buck.rules.keys.StringRuleKeyHasher;
 import com.facebook.buck.rules.keys.SupportsDependencyFileRuleKey;
+import com.facebook.buck.rules.keys.hasher.StringRuleKeyHasher;
 import com.facebook.buck.step.ExecutionContext;
 import com.facebook.buck.step.StepRunner;
 import com.facebook.buck.util.MoreCollectors;
@@ -37,6 +37,7 @@ import com.facebook.buck.util.collect.SortedSets;
 import com.facebook.buck.util.concurrent.MoreFutures;
 import com.facebook.buck.util.concurrent.ResourceAmounts;
 import com.facebook.buck.util.concurrent.WeightedListeningExecutorService;
+import com.facebook.buck.util.exceptions.BuckUncheckedExecutionException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -127,7 +128,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
   private final CachingBuildEngineDelegate cachingBuildEngineDelegate;
 
   private final WeightedListeningExecutorService service;
-  private final WeightedListeningExecutorService cacheActivityService;
   private final StepRunner stepRunner;
   private final BuildMode buildMode;
   private final MetadataStorage metadataStorage;
@@ -156,7 +156,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
   public CachingBuildEngine(
       CachingBuildEngineDelegate cachingBuildEngineDelegate,
       WeightedListeningExecutorService service,
-      WeightedListeningExecutorService artifactFetchService,
       StepRunner stepRunner,
       BuildMode buildMode,
       MetadataStorage metadataStorage,
@@ -172,7 +171,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     this.cachingBuildEngineDelegate = cachingBuildEngineDelegate;
 
     this.service = service;
-    this.cacheActivityService = artifactFetchService;
     this.stepRunner = stepRunner;
     this.buildMode = buildMode;
     this.metadataStorage = metadataStorage;
@@ -228,7 +226,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
     this.cachingBuildEngineDelegate = cachingBuildEngineDelegate;
 
     this.service = service;
-    this.cacheActivityService = service;
     this.stepRunner = stepRunner;
     this.buildMode = buildMode;
     this.metadataStorage = metadataStorage;
@@ -474,7 +471,12 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
                       rule,
                       buildRuleDurationTracker,
                       ruleKeyFactories.getDefaultRuleKeyFactory())) {
-                return ruleKeyFactories.getDefaultRuleKeyFactory().build(rule);
+                try {
+                  return ruleKeyFactories.getDefaultRuleKeyFactory().build(rule);
+                } catch (Exception e) {
+                  throw new BuckUncheckedExecutionException(
+                      e, String.format("When computing rulekey for %s.", rule));
+                }
               }
             },
             serviceByAdjustingDefaultWeightsTo(RULE_KEY_COMPUTATION_RESOURCE_AMOUNTS));
@@ -552,7 +554,6 @@ public class CachingBuildEngine implements BuildEngine, Closeable {
             buildInfoStoreManager,
             buildMode,
             buildRuleDurationTracker,
-            cacheActivityService,
             consoleLogBuildFailuresInline,
             defaultRuleKeyDiagnostics,
             depFiles,

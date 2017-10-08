@@ -18,7 +18,8 @@ package com.facebook.buck.android;
 
 import static org.junit.Assert.assertEquals;
 
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.TestProjectFilesystems;
 import com.facebook.buck.jvm.java.testutil.AbiCompilationModeTest;
 import com.facebook.buck.model.BuildTargetFactory;
 import com.facebook.buck.model.BuildTargets;
@@ -73,7 +74,7 @@ public class AndroidExopackageBinaryIntegrationTest extends AbiCompilationModeTe
         .runBuckBuild(
             DEX_EXOPACKAGE_TARGET, NATIVE_EXOPACKAGE_TARGET, DEX_AND_NATIVE_EXOPACKAGE_TARGET)
         .assertSuccess();
-    filesystem = new ProjectFilesystem(workspace.getDestPath());
+    filesystem = TestProjectFilesystems.createProjectFilesystem(workspace.getDestPath());
   }
 
   @Test
@@ -257,14 +258,14 @@ public class AndroidExopackageBinaryIntegrationTest extends AbiCompilationModeTe
   }
 
   @Test
-  public void testEditingNativeGetsAbiHitForNativeExopackage() throws IOException {
+  public void testEditingNativeGetsRuleKeyHitForNativeExopackage() throws IOException {
     // Change the binary and ensure that we re-run apkbuilder.
     workspace.replaceFileContents("native/cxx/lib.cpp", "return 3", "return 7");
 
     workspace.resetBuildLogFile();
     workspace.runBuckBuild("-v=5", NATIVE_EXOPACKAGE_TARGET).assertSuccess();
 
-    workspace.getBuildLog().assertTargetHadMatchingInputRuleKey(NATIVE_EXOPACKAGE_TARGET);
+    workspace.getBuildLog().assertTargetHadMatchingRuleKey(NATIVE_EXOPACKAGE_TARGET);
   }
 
   @Test

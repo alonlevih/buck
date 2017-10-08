@@ -19,7 +19,11 @@ package com.facebook.buck.haskell;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
+import com.facebook.buck.cxx.toolchain.CxxPlatformUtils;
 import com.facebook.buck.io.ExecutableFinder;
+import com.facebook.buck.model.FlavorDomain;
+import com.facebook.buck.rules.CommandTool;
+import com.facebook.buck.rules.ConstantToolProvider;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -32,6 +36,48 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 class HaskellTestUtils {
+
+  public static final HaskellPlatform DEFAULT_PLATFORM =
+      HaskellPlatform.builder()
+          .setCompiler(new ConstantToolProvider(new CommandTool.Builder().build()))
+          .setLinker(new ConstantToolProvider(new CommandTool.Builder().build()))
+          .setPackager(new ConstantToolProvider(new CommandTool.Builder().build()))
+          .setHaddock(new ConstantToolProvider(new CommandTool.Builder().build()))
+          .setHaskellVersion(HaskellVersion.of(8))
+          .setShouldCacheLinks(true)
+          .setCxxPlatform(CxxPlatformUtils.DEFAULT_PLATFORM)
+          .setGhciScriptTemplate(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciBinutils(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciGhc(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciLib(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciCc(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciCxx(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .setGhciCpp(
+              () -> {
+                throw new UnsupportedOperationException();
+              })
+          .build();
+
+  public static final FlavorDomain<HaskellPlatform> DEFAULT_PLATFORMS =
+      FlavorDomain.of("Haskell Platform", DEFAULT_PLATFORM);
 
   private HaskellTestUtils() {}
 
@@ -47,7 +93,7 @@ class HaskellTestUtils {
     ImmutableList<String> cmd = ImmutableList.of(compilerOptional.get().toString(), "--version");
     Process process = Runtime.getRuntime().exec(cmd.toArray(new String[cmd.size()]));
     String output = new String(ByteStreams.toByteArray(process.getInputStream()), Charsets.UTF_8);
-    Pattern versionPattern = Pattern.compile(".*version ([0-9]+)(?:[.][0-9]+(?:[.][0-9]+)?)?");
+    Pattern versionPattern = Pattern.compile(".*version ([0-9]+).*");
     Matcher matcher = versionPattern.matcher(output.trim());
     assertTrue(
         String.format(

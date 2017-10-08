@@ -25,7 +25,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 
 import com.facebook.buck.io.ArchiveMemberPath;
-import com.facebook.buck.io.ProjectFilesystem;
+import com.facebook.buck.io.filesystem.ProjectFilesystem;
 import com.facebook.buck.jvm.java.JavaLibraryBuilder;
 import com.facebook.buck.model.BuildTarget;
 import com.facebook.buck.model.BuildTargetFactory;
@@ -39,16 +39,20 @@ import com.facebook.buck.testutil.DummyFileHashCache;
 import com.facebook.buck.testutil.FakeFileHashCache;
 import com.facebook.buck.testutil.FakeProjectFilesystem;
 import com.facebook.buck.util.HumanReadableException;
-import com.facebook.buck.util.cache.DefaultFileHashCache;
 import com.facebook.buck.util.cache.FileHashCache;
 import com.facebook.buck.util.cache.FileHashCacheMode;
-import com.facebook.buck.util.cache.StackedFileHashCache;
+import com.facebook.buck.util.cache.impl.DefaultFileHashCache;
+import com.facebook.buck.util.cache.impl.StackedFileHashCache;
+import com.facebook.buck.util.immutables.BuckStyleImmutable;
+import com.facebook.buck.util.immutables.BuckStyleTuple;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.hash.HashCode;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import org.immutables.value.Value;
 import org.junit.Test;
 
 public class RuleKeyTest {
@@ -63,7 +67,7 @@ public class RuleKeyTest {
   public void shouldNotAllowPathsInRuleKeysWhenSetReflectively() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKeyBuilder<HashCode> builder = createBuilder(resolver, ruleFinder);
@@ -81,9 +85,11 @@ public class RuleKeyTest {
                 DefaultFileHashCache.createDefaultFileHashCache(
                     filesystem, FileHashCacheMode.DEFAULT)));
     BuildRuleResolver ruleResolver1 =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     BuildRuleResolver ruleResolver2 =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder1 = new SourcePathRuleFinder(ruleResolver1);
     DefaultRuleKeyFactory ruleKeyFactory =
         new DefaultRuleKeyFactory(
@@ -127,21 +133,21 @@ public class RuleKeyTest {
   public void ensureSimpleValuesCorrectRuleKeyChangesMade() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey reflective =
         createBuilder(resolver, ruleFinder)
             .setReflectively("long", 42L)
             .setReflectively("boolean", true)
-            .setReflectively("path", new FakeSourcePath("location/of/the/rebel/plans"))
+            .setReflectively("path", FakeSourcePath.of("location/of/the/rebel/plans"))
             .build(RuleKey::new);
 
     RuleKey manual =
         createBuilder(resolver, ruleFinder)
             .setReflectively("long", 42L)
             .setReflectively("boolean", true)
-            .setReflectively("path", new FakeSourcePath("location/of/the/rebel/plans"))
+            .setReflectively("path", FakeSourcePath.of("location/of/the/rebel/plans"))
             .build(RuleKey::new);
 
     assertEquals(manual, reflective);
@@ -154,7 +160,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey ruleKeyPairA =
@@ -180,7 +186,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey ruleKeyPairA =
@@ -205,7 +211,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey ruleKeyPairA =
@@ -235,7 +241,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey ruleKeyPairA =
@@ -258,7 +264,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey reflective =
@@ -280,7 +286,7 @@ public class RuleKeyTest {
   public void differentSeedsMakeDifferentKeys() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
 
@@ -305,7 +311,7 @@ public class RuleKeyTest {
   public void testRuleKeyEqualsAndHashCodeMethods() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey keyPair1 =
@@ -328,7 +334,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     // Changing the name of a named source path should change the hash...
@@ -336,39 +342,39 @@ public class RuleKeyTest {
         buildResult(
             createBuilder(resolver, ruleFinder)
                 .setReflectively(
-                    "key", new PathSourcePath(projectFilesystem, Paths.get("something")))),
+                    "key", PathSourcePath.of(projectFilesystem, Paths.get("something")))),
         buildResult(
             createBuilder(resolver, ruleFinder)
                 .setReflectively(
-                    "key", new PathSourcePath(projectFilesystem, Paths.get("something", "else")))));
+                    "key", PathSourcePath.of(projectFilesystem, Paths.get("something", "else")))));
 
     // ... as should changing the key
     assertNotEquals(
         buildResult(
             createBuilder(resolver, ruleFinder)
                 .setReflectively(
-                    "key", new PathSourcePath(projectFilesystem, Paths.get("something")))),
+                    "key", PathSourcePath.of(projectFilesystem, Paths.get("something")))),
         buildResult(
             createBuilder(resolver, ruleFinder)
                 .setReflectively(
                     "different-key",
-                    new PathSourcePath(projectFilesystem, Paths.get("something")))));
+                    PathSourcePath.of(projectFilesystem, Paths.get("something")))));
   }
 
   @Test
   public void setNonHashingSourcePathsWithDifferentRelativePaths() {
     ProjectFilesystem projectFilesystem = new FakeProjectFilesystem();
-    PathSourcePath sourcePathOne = new PathSourcePath(projectFilesystem, Paths.get("something"));
-    PathSourcePath sourcePathTwo = new PathSourcePath(projectFilesystem, Paths.get("something2"));
+    PathSourcePath sourcePathOne = FakeSourcePath.of(projectFilesystem, "something");
+    PathSourcePath sourcePathTwo = FakeSourcePath.of(projectFilesystem, "something2");
 
     // Changing the relative path should change the rule key
     SourcePathRuleFinder ruleFinder1 =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathRuleFinder ruleFinder2 =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     assertNotEquals(
         buildResult(
@@ -382,7 +388,8 @@ public class RuleKeyTest {
   @Test
   public void setInputBuildTargetSourcePath() {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FakeBuildRule fake1 = new FakeBuildRule("//:fake1");
@@ -396,13 +403,13 @@ public class RuleKeyTest {
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))),
         buildResult(
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))));
 
     // Verify that just changing the path of the build rule changes the rule key.
@@ -411,13 +418,13 @@ public class RuleKeyTest {
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))),
         buildResult(
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("different")))));
 
     // Verify that just changing the build rule rule key changes the calculated rule key.
@@ -426,13 +433,13 @@ public class RuleKeyTest {
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))),
         buildResult(
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake2.getBuildTarget(), Paths.get("location")))));
 
     // Verify that just changing the key changes the calculated rule key.
@@ -441,20 +448,21 @@ public class RuleKeyTest {
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))),
         buildResult(
             createBuilder(pathResolver, ruleFinder)
                 .setReflectively(
                     "different-key",
-                    new ExplicitBuildTargetSourcePath(
+                    ExplicitBuildTargetSourcePath.of(
                         fake1.getBuildTarget(), Paths.get("location")))));
   }
 
   @Test
   public void setInputArchiveMemberSourcePath() {
     BuildRuleResolver resolver =
-        new BuildRuleResolver(TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
+        new SingleThreadedBuildRuleResolver(
+            TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer());
     SourcePathRuleFinder ruleFinder = new SourcePathRuleFinder(resolver);
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
 
@@ -462,9 +470,8 @@ public class RuleKeyTest {
     resolver.addToIndex(fakeBuildRule);
 
     ExplicitBuildTargetSourcePath archive1 =
-        new ExplicitBuildTargetSourcePath(fakeBuildRule.getBuildTarget(), Paths.get("location"));
-    PathSourcePath archive2 =
-        new PathSourcePath(new FakeProjectFilesystem(), Paths.get("otherLocation"));
+        ExplicitBuildTargetSourcePath.of(fakeBuildRule.getBuildTarget(), Paths.get("location"));
+    PathSourcePath archive2 = FakeSourcePath.of("otherLocation");
 
     // Verify that two ArchiveMemberSourcePaths with the same archive and path
     assertEquals(
@@ -503,11 +510,11 @@ public class RuleKeyTest {
   @Test
   public void canAddMapsToRuleKeys() {
     ImmutableMap<String, ?> map =
-        ImmutableMap.of("path", new FakeSourcePath("some/path"), "boolean", true);
+        ImmutableMap.of("path", FakeSourcePath.of("some/path"), "boolean", true);
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey key =
@@ -520,11 +527,11 @@ public class RuleKeyTest {
   public void keysOfMapsAddedToRuleKeysDoNotNeedToBeStrings() {
     ImmutableMap<?, ?> map =
         ImmutableMap.of(
-            new FakeSourcePath("some/path"), "woohoo!", 42L, "life, the universe and everything");
+            FakeSourcePath.of("some/path"), "woohoo!", 42L, "life, the universe and everything");
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey key =
@@ -537,7 +544,7 @@ public class RuleKeyTest {
   public void canAddRuleKeyAppendable() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey key =
@@ -553,7 +560,7 @@ public class RuleKeyTest {
         ImmutableList.of(new TestRuleKeyAppendable("foo"), new TestRuleKeyAppendable("bar"));
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey key =
@@ -569,7 +576,7 @@ public class RuleKeyTest {
             "bar", new TestRuleKeyAppendable("bar"));
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
     RuleKey key =
@@ -584,7 +591,7 @@ public class RuleKeyTest {
     BuildRuleParams params = TestBuildRuleParams.create();
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FileHashCache hashCache =
@@ -613,7 +620,7 @@ public class RuleKeyTest {
     BuildRuleParams params = TestBuildRuleParams.create();
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FileHashCache hashCache =
@@ -666,7 +673,7 @@ public class RuleKeyTest {
 
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver pathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FileHashCache hashCache = new FakeFileHashCache(ImmutableMap.of());
@@ -678,7 +685,7 @@ public class RuleKeyTest {
             .build(RuleKey::new);
     RuleKey noopRuleKey =
         new NoopSetterRuleKeyBuilder(ruleFinder, pathResolver, hashCache, ruleKeyFactory)
-            .setReflectively("key", new FakeSourcePath("value"))
+            .setReflectively("key", FakeSourcePath.of("value"))
             .build(RuleKey::new);
 
     assertThat(noopRuleKey, is(equalTo(nullRuleKey)));
@@ -688,7 +695,7 @@ public class RuleKeyTest {
   public void declaredDepsAndExtraDepsGenerateDifferentRuleKeys() {
     SourcePathRuleFinder ruleFinder =
         new SourcePathRuleFinder(
-            new BuildRuleResolver(
+            new SingleThreadedBuildRuleResolver(
                 TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
     SourcePathResolver sourcePathResolver = DefaultSourcePathResolver.from(ruleFinder);
     FileHashCache hashCache = new FakeFileHashCache(ImmutableMap.of());
@@ -726,6 +733,178 @@ public class RuleKeyTest {
         ruleKeyFactory.build(ruleWithDeclaredDep), ruleKeyFactory.build(ruleWithBothDeps));
     assertNotEquals(ruleKeyFactory.build(ruleWithExtraDep), ruleKeyFactory.build(ruleWithBothDeps));
   }
+
+  @Test
+  public void immutablesCanAddValueMethodsFromInterfaceImmutablesToRuleKeys() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    RuleKey first =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyInterfaceImmutable.of("added-1", "ignored-1"))
+            .build(RuleKey::new);
+
+    RuleKey second =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyInterfaceImmutable.of("added-1", "ignored-2"))
+            .build(RuleKey::new);
+
+    RuleKey third =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyInterfaceImmutable.of("added-2", "ignored-2"))
+            .build(RuleKey::new);
+
+    assertEquals(first, second);
+    assertNotEquals(first, third);
+  }
+
+  @Value.Immutable
+  @BuckStyleTuple
+  interface AbstractTestRuleKeyInterfaceImmutable extends AddsToRuleKey {
+    @AddToRuleKey
+    String getRuleKeyValue();
+
+    String getNonRuleKeyValue();
+  }
+
+  @Test
+  public void immutablesCanAddNonDefaultImmutableValues() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    RuleKey first =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyImmutableWithDefaults.builder().build())
+            .build(RuleKey::new);
+
+    RuleKey second =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively(
+                "value",
+                TestRuleKeyImmutableWithDefaults.builder().setRuleKeyValue("other").build())
+            .build(RuleKey::new);
+
+    assertNotEquals(first, second);
+  }
+
+  @Value.Immutable
+  @BuckStyleImmutable
+  abstract static class AbstractTestRuleKeyImmutableWithDefaults implements AddsToRuleKey {
+    @AddToRuleKey
+    @Value.Default
+    String getRuleKeyValue() {
+      return "default";
+    }
+  }
+
+  @Test
+  public void immutablesCanAddValueMethodsFromExtendedInterfaceImmutablesToRuleKeys() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    RuleKey first =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyAbstractImmutable.of("added-1", "ignored-1"))
+            .build(RuleKey::new);
+
+    RuleKey second =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyAbstractImmutable.of("added-1", "ignored-2"))
+            .build(RuleKey::new);
+
+    RuleKey third =
+        createBuilder(resolver, ruleFinder)
+            .setReflectively("value", TestRuleKeyAbstractImmutable.of("added-2", "ignored-2"))
+            .build(RuleKey::new);
+
+    assertEquals(first, second);
+    assertNotEquals(first, third);
+  }
+
+  @Value.Immutable
+  @BuckStyleTuple
+  abstract static class AbstractTestRuleKeyAbstractImmutable implements AddsToRuleKey {
+    @AddToRuleKey
+    abstract String getRuleKeyValue();
+
+    abstract String getNonRuleKeyValue();
+  }
+
+  @Test(expected = UncheckedExecutionException.class)
+  public void badUseOfAddValueMethodsToRuleKey() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    createBuilder(resolver, ruleFinder)
+        .setReflectively("value", (BadUseOfAddValueMethodsToRuleKey) () -> "")
+        .build(RuleKey::new);
+  }
+
+  interface BadUseOfAddValueMethodsToRuleKey extends AddsToRuleKey {
+    @AddToRuleKey
+    String whatever();
+  }
+
+  interface EmptyInterface {}
+
+  interface ExtendsBadUseAndOther extends EmptyInterface, BadUseOfAddValueMethodsToRuleKey {}
+
+  abstract class EmptyClass {}
+
+  abstract class ExtendsFurtherBadUseAndOther extends EmptyClass
+      implements EmptyInterface, ExtendsBadUseAndOther {}
+
+  @Test(expected = UncheckedExecutionException.class)
+  public void badUseOfAddValueMethodsToRuleKeyInHierarchy() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    createBuilder(resolver, ruleFinder)
+        .setReflectively("value", new ClassWithBadThingInHierarchy())
+        .build(RuleKey::new);
+  }
+
+  class ClassWithBadThingInHierarchy extends ExtendsFurtherBadUseAndOther {
+    @Override
+    public String whatever() {
+      return null;
+    }
+  }
+
+  @Test(expected = UncheckedExecutionException.class)
+  public void badUseOfAddValueMethodsToRuleKeyInSomeSuperInterface() {
+    SourcePathRuleFinder ruleFinder =
+        new SourcePathRuleFinder(
+            new SingleThreadedBuildRuleResolver(
+                TargetGraph.EMPTY, new DefaultTargetNodeToBuildRuleTransformer()));
+    SourcePathResolver resolver = DefaultSourcePathResolver.from(ruleFinder);
+    createBuilder(resolver, ruleFinder)
+        .setReflectively(
+            "value",
+            new DerivedFromImplementsBadUseOfAddValueMethodsToRuleKey() {
+              @Override
+              public String whatever() {
+                return null;
+              }
+            })
+        .build(RuleKey::new);
+  }
+
+  abstract class ImplementsBadUseOfAddValueMethodsToRuleKey
+      implements BadUseOfAddValueMethodsToRuleKey {}
+
+  abstract class DerivedFromImplementsBadUseOfAddValueMethodsToRuleKey
+      extends ImplementsBadUseOfAddValueMethodsToRuleKey {}
 
   private static class TestRuleKeyAppendable implements RuleKeyAppendable {
     private final String value;
