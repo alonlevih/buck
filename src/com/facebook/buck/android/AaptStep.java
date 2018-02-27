@@ -24,6 +24,7 @@ import com.facebook.buck.util.MoreIterables;
 import com.facebook.buck.util.MoreStrings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -121,7 +122,9 @@ public class AaptStep extends ShellStep {
     // Include all of the res/ directories.
     builder.add("--auto-add-overlay");
     for (Path res : MoreIterables.dedupKeepLast(resDirectories)) {
-      builder.add("-S", res.toString());
+      if (Files.exists(res)) {
+        builder.add("-S", res.toString());
+      }
     }
 
     // Include the assets/ directory, if any.
